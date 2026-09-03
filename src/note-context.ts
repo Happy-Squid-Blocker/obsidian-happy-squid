@@ -7,8 +7,8 @@ import { findTaskLine, MARKER, parseTaskLine, taskIdFor } from "./task-line";
  * and it composes SERVER-side for the reason that is exactly reversed here: the
  * server is the only thing that can reach the Todoist API, and it is the one
  * thing that can never reach a vault. So the gathering is the plugin's, and what
- * crosses the wire is the two halves the user can never edit (`context` and
- * `notes`), kept apart from the one they can (the title) — see
+ * crosses the wire is the three parts the user can never edit (`context`,
+ * `notes` and `subtasks`), kept apart from the one they can (the title) — see
  * `src/shared/source-task.ts` for why that split is what makes re-describing an
  * imported task work.
  *
@@ -20,6 +20,11 @@ import { findTaskLine, MARKER, parseTaskLine, taskIdFor } from "./task-line";
  *   Heading                  ← the section: the `#`-chain above the line
  *   Parent task              ← the enclosing list item
  *   Parent task description  ← the parent's own continuation lines
+ *
+ * and one thing Todoist gives that this one gives BETTER, a vault being a file
+ * rather than an API to page through:
+ *
+ *   Subtask                  ← the open boxes under the started item
  *
  * Deliberately free of Obsidian and CodeMirror imports, exactly as
  * `task-line.ts` is, so `src/tests/obsidian/` can hold it and it runs in
@@ -36,6 +41,30 @@ export const PARENT_DESCRIPTION_LIMIT = 500;
 /** The started item's own notes, which are the closest thing there is to the
  *  user saying what they mean to do. Three times the parent's allowance. */
 export const STARTED_DESCRIPTION_LIMIT = 1500;
+
+/**
+ * How many of the started task's own subtasks ride along with it.
+ *
+ * The list is the answer to "what is this task made of", which the title alone
+ * never says: "Ship the auth rewrite" tells the squid nothing about whether
+ * reading a Stripe changelog is the work or a detour, and the three open boxes
+ * under it do. Anton's number (2026-09-03), and it is a real bound rather than a
+ * formality — this block rides along on EVERY monitoring judgment for as long as
+ * the task runs, so an uncapped list would put a project plan in front of the
+ * model on every page load.
+ */
+export const SUBTASK_LIMIT = 20;
+
+/**
+ * What one is called.
+ *
+ * The mirror of `Parent task` above, which is the whole reason this is the word:
+ * the block already names one end of that relationship, so naming the other end
+ * in the same vocabulary is what lets the two be read together. "Subtask" is
+ * also the term every task app ships (Todoist, Asana, Jira), so it is not a word
+ * invented here.
+ */
+const SUBTASK_LABEL = "Subtask";
 
 /** Said to the MODEL, never to the user, and word for word the Todoist one: it
  *  exists so a description that stops mid-sentence reads as cut rather than as
@@ -115,6 +144,66 @@ function descriptionUnder(lines: string[], index: number, indent: number): strin
 }
 
 /**
+ * The open checkboxes under the item on `index` — its subtasks.
+ *
+ * The WHOLE subtree, flattened into document order (Anton, 2026-09-03), rather
+ * than the direct children `parentOf` would have as this function's mirror: a
+ * user who nests two levels means the deeper boxes just as much, and the cap is
+ * what keeps that affordable instead of the depth.
+ *
+ * Three rules, and each of them is what the list is FOR:
+ *
+ *  - **Only checkbox items.** A nested plain bullet is structure or a note, not
+ *    work — but it is DESCENDED THROUGH, so `- Backend` holding three boxes
+ *    contributes its three boxes and not itself.
+ *  - **Only OPEN ones.** What is left to do is what the squid judges a website
+ *    against; a ticked box is spent and would only cost cap slots.
+ *  - **A blank line does not end the list**, which is the one place this parts
+ *    company with `descriptionUnder` above. There a blank line ends the item's
+ *    prose, because prose is a paragraph; here it is a loose list's own
+ *    formatting, and an item is still an item after it. What ends the subtree is
+ *    the INDENT, exactly as it does for the description: the first non-blank
+ *    line back at the item's own level or further out.
+ *
+ * `parseTaskLine` reads each line, so a subtask's title arrives with its own
+ * `{task}` marker and the neighbours' annotations already taken out of it —
+ * the same words the line would run under if it were the one that was started.
+ */
+function subtasksUnder(lines: string[], index: number, indent: number): { titles: string[]; more: number } {
+  const titles: string[] = [];
+  let more = 0;
+  for (let i = index + 1; i < lines.length; i++) {
+    const line = lines[i];
+    if (!line.trim()) continue;
+    if (indentOf(line) <= indent) break;
+    const parsed = parseTaskLine(line);
+    if (!parsed || parsed.checked || !parsed.title) continue;
+    if (titles.length < SUBTASK_LIMIT) titles.push(parsed.title);
+    else more += 1;
+  }
+  return { titles, more };
+}
+
+/**
+ * The subtask lines, already labelled — the shape `context` is in, and for the
+ * same reason: everything the note composes is composed here, and
+ * `renderSourceDescription` puts the halves in order without knowing what is in
+ * them.
+ *
+ * A list cut short says so, on a line of its OWN rather than as a twenty-first
+ * `Subtask:` — the truncation marker beside it exists so a cut description reads
+ * as cut rather than as all there was, and a marker wearing the label would be a
+ * subtask named "…". Empty when the task has none, which is most tasks, and an
+ * empty field is omitted from the block entirely.
+ */
+function composeSubtasks(lines: string[], index: number, indent: number): string {
+  const { titles, more } = subtasksUnder(lines, index, indent);
+  const out = titles.map((title) => `${SUBTASK_LABEL}: ${title}`);
+  if (more > 0) out.push(`(${more} more ${more === 1 ? "subtask" : "subtasks"} not listed)`);
+  return out.join("\n");
+}
+
+/**
  * The nearest enclosing list item, or null when the task is already top-level.
  *
  * ONE parent, which is where this stops short of the nesting a note can express
@@ -191,6 +280,7 @@ export function notePlace(notePath: string): { folder: string; note: string } {
 export function composeNoteContext(params: { notePath: string; text: string; title: string }): {
   context: string;
   notes: string;
+  subtasks: string;
 } {
   const { folder, note } = notePlace(params.notePath);
   const lines = (params.text ?? "").split("\n");
@@ -217,6 +307,7 @@ export function composeNoteContext(params: { notePath: string; text: string; tit
   return {
     context: out.join("\n"),
     notes: index < 0 ? "" : truncateDescription(descriptionUnder(lines, index, indent), STARTED_DESCRIPTION_LIMIT),
+    subtasks: index < 0 ? "" : composeSubtasks(lines, index, indent),
   };
 }
 

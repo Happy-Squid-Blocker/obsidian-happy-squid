@@ -11,6 +11,7 @@ import { type PluginData, readData, rememberApplied, rememberRewrite } from "./s
 import { MARKER, notePathOf, parseTaskLine, taskIdFor } from "./task-line";
 import { composeNoteContext } from "./note-context";
 import { tickCompleted, writeRewrite } from "./tick";
+import { WELCOME_PATH, welcomeNote } from "./welcome";
 import { tickWatch } from "./tick-watch";
 import {
   absorbGoalDays,
@@ -92,7 +93,14 @@ export default class HappySquidPlugin extends Plugin {
   private ownTicks = new Set<string>();
 
   async onload(): Promise<void> {
-    this.data = readData(await this.loadData());
+    // A FRESH install is one with no `data.json` at all, which is the flag
+    // itself — no field to add, and nothing an upgrade could trip. The write
+    // below is what makes it true from here on, so a welcome note that fails to
+    // be written is not attempted again at every launch.
+    const stored: unknown = await this.loadData();
+    const firstRun = stored === null || stored === undefined;
+    this.data = readData(stored);
+    if (firstRun) await this.saveData(this.data);
     this.auth = new Auth({
       load: async () => this.data.auth,
       save: async (store) => {
@@ -168,6 +176,12 @@ export default class HappySquidPlugin extends Plugin {
     // is precisely the damage this exists to prevent.
     this.app.workspace.onLayoutReady(() => {
       this.registerEvent(this.app.vault.on("create", (file) => void this.unwrapTemplate(file)));
+      // The welcome note, on a fresh install only. Inside `onLayoutReady` for
+      // the same reason the listener above is: at load there is no workspace to
+      // open a note into yet. It is written AFTER that listener is registered,
+      // which is harmless — the note carries no `:template` marker to unwrap,
+      // and every marker in it is dated so the stamp beat leaves it alone.
+      if (firstRun) void this.openWelcome(true);
     });
     void this.live.start();
     this.registerEvent(this.app.workspace.on("active-leaf-change", () => void this.sync()));
@@ -185,6 +199,38 @@ export default class HappySquidPlugin extends Plugin {
         return true;
       },
     });
+
+    // The way back to the note after it has been deleted, and the way to it at
+    // all for anyone who installed before it existed.
+    this.addCommand({
+      id: "open-welcome-note",
+      name: "Open the welcome note",
+      callback: () => void this.openWelcome(false),
+    });
+  }
+
+  /**
+   * Writes the welcome note and opens it.
+   *
+   * `onInstall` is the fresh-install path, and it is the CAUTIOUS one: a vault
+   * that already has a file by that name keeps it and is not opened, because on
+   * an install the name collision is far more likely to be somebody's own note
+   * than a copy of ours. Asked for by the command instead, an existing file at
+   * the path is simply opened — by then the user has said which note they mean.
+   */
+  private async openWelcome(onInstall: boolean): Promise<void> {
+    try {
+      const existing = this.app.vault.getAbstractFileByPath(WELCOME_PATH);
+      if (existing instanceof TFile) {
+        if (onInstall) return;
+        await this.app.workspace.getLeaf(true).openFile(existing);
+        return;
+      }
+      const file = await this.app.vault.create(WELCOME_PATH, welcomeNote());
+      await this.app.workspace.getLeaf(true).openFile(file);
+    } catch (e) {
+      console.warn("[happy-squid] could not open the welcome note", e);
+    }
   }
 
   /**
@@ -455,7 +501,7 @@ export default class HappySquidPlugin extends Plugin {
     // the normal case for this press, not an edge one.
     const view = this.app.workspace.getActiveViewOfType(MarkdownView);
     const notePath = view?.file?.path ?? "";
-    const { context, notes } = composeNoteContext({
+    const { context, notes, subtasks } = composeNoteContext({
       notePath,
       text: view?.editor?.getValue() ?? "",
       title,
@@ -465,7 +511,7 @@ export default class HappySquidPlugin extends Plugin {
     // which is what a re-press after a reword is for, and the account ends it
     // — the task running, or a verdict on the row this press makes.
     this.states.markPending("starting", title, sourceTaskId);
-    const result = await startTask(this.auth, { sourceTaskId, title, notePath, context, notes });
+    const result = await startTask(this.auth, { sourceTaskId, title, notePath, context, notes, subtasks });
     if (!result.ok) {
       this.states.dropPending(title);
       new Notice(result.reason === "signed-out" ? SIGNED_OUT : COULD_NOT_START);

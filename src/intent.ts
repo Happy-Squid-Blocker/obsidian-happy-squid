@@ -29,8 +29,12 @@ export interface StartTaskRequest {
    *  so a rewrite can re-render around them. Empty when the line could not be
    *  found in the note, which is not a reason to refuse the start. */
   context: string;
-  /** The started item's own continuation lines. The last line of the block. */
+  /** The started item's own continuation lines. */
   notes: string;
+  /** The open boxes under the started item, one labelled line each and already
+   *  capped by `note-context.ts`. The last lines of the block, and empty for the
+   *  many tasks that are one line with nothing under them. */
+  subtasks: string;
 }
 
 /**

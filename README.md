@@ -45,6 +45,14 @@ sent. It works the other way round too — finishing the task in Happy Squid
 ticks the box for you, next time the plugin looks, so a task finished while
 Obsidian was shut is ticked at the next launch.
 
+**A task's subtasks come with it.** The unticked boxes nested under the line you
+press are sent along with it, so the squid weighs a page against what the task
+actually involves rather than against its title alone. Every level counts, not
+just the first — a box three deep is still part of the work — and a plain nested
+bullet is read as structure, so the boxes hanging off it come too while the
+bullet itself does not. Ticked boxes are left out, being work already done. The
+list stops at twenty and says how many it left behind.
+
 There is also a command, **Start or stop task under cursor**, which needs no
 rendering and works in Live Preview, reading view and source mode alike. Give it
 a hotkey.
@@ -70,8 +78,9 @@ started from notes), to start and stop tasks through the `obsidian-intent`
 function, and to hold a realtime connection so the control updates within a
 second rather than at the next 30-second poll. When you press **start task** it
 sends the task's own words, the note's path, where the line sits (folder, note,
-heading, parent item and the parent's own description lines) and the item's
-continuation lines, because that is what Happy Squid's productivity check reads.
+heading, parent item and the parent's own description lines), the item's
+continuation lines, and the first twenty unticked boxes underneath it, because
+that is what Happy Squid's productivity check reads.
 Nothing else leaves the vault — no other note content, no telemetry, no
 analytics. Happy Squid's privacy policy is at
 [happy-squid.com/privacy](https://happy-squid.com/privacy).
@@ -343,6 +352,18 @@ Free Time spent, the times blocked, and the written summary. They only change wh
 the card DRAWS — everything goes on being recorded exactly as before, so a switch
 turned back on shows the figures it was hiding, and the `{tasktime}`,
 `{freetime}` and `{timesblocked}` markers are untouched by them.
+
+## The welcome note
+
+The first time the plugin is installed it writes a note called **Happy Squid**
+at the root of your vault and opens it. It is the short version of this page,
+with every example live: a checkbox you can start, your Task Goal card, and each
+of the figures above filled in with today.
+
+Delete it whenever you like — it is written once, on a fresh install, and never
+again. The command **Open the welcome note** brings it back, and opens the one
+you already have if you kept it. A vault that already has a note by that name is
+left alone.
 
 ## Building
 
