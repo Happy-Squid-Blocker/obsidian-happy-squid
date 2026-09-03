@@ -1,0 +1,10 @@
+{
+  "id": "happy-squid",
+  "name": "Happy Squid",
+  "version": "1.0.0",
+  "minAppVersion": "1.4.0",
+  "description": "Start and stop Happy Squid tasks from checkboxes in your notes, and show your Task Goal, daily summary and focus figures beside them.",
+  "author": "Happy Squid",
+  "authorUrl": "https://happy-squid.com",
+  "isDesktopOnly": false
+}
