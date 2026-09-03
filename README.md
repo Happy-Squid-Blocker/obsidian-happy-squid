@@ -346,40 +346,40 @@ turned back on shows the figures it was hiding, and the `{tasktime}`,
 
 ## Building
 
-The plugin's source lives in Happy Squid's private monorepo, in its `obsidian/`
-folder; the community directory verifies every release's build against that
-source. What follows is how it is built there.
-
 ```bash
 npm install
 npm run build      # tsc --noEmit, then esbuild → main.js
 npm run dev        # watch
 npm run check      # types only
 npm run lint       # Obsidian's own community-directory review rules (eslint-plugin-obsidianmd)
-npm run release    # build, lint, sync the listing files to the public repo, create the GitHub release
 ```
 
 `npm run lint` runs the same rules the community directory's scanner applies to
 every release, so run it before tagging one. Warnings there do not block a
 listing; errors do.
 
-`main.js` is the bundle Obsidian loads and is gitignored: it belongs to a
-release, not to the tree. To try it, copy `main.js`, `manifest.json` and
+`main.js` is the bundle Obsidian loads and is not committed: it belongs to a
+release, not to the tree. To try a build, copy `main.js`, `manifest.json` and
 `styles.css` into `<vault>/.obsidian/plugins/happy-squid/` and enable it under
 Settings → Community plugins.
 
-The plugin's real logic — the line parser in `src/task-line.ts`, the note reader
-in `src/note-context.ts`, the goal arithmetic in `src/goal.ts` — is kept free of
-Obsidian and CodeMirror imports, and is tested by the EXTENSION's suite
-(`src/tests/obsidian/`) so it runs in the repo's `npm run check` rather than
-sitting behind a second test runner.
+The plugin is developed inside Happy Squid's own repository, beside the browser
+extension and the phone apps, and this repository is that folder laid out to
+stand on its own. Every release is published from there, so the source here is
+always the source that built the release beside it, and a release rebuilt from
+this repository comes out byte for byte identical.
 
-`goal.ts` reaches across into `../../src/shared/format` for `formatGoalMinutes`,
-and that is the one import that crosses the boundary. It is safe because that
-file imports nothing at all, so it drags none of the extension's type graph into
-the bundle, and it is deliberate because that function is the single place a goal
-figure is spelled anywhere in the product. A fourth copy of the rule is exactly
-the drift it exists to prevent.
+`src/vendor/` is the one seam between the two. Three files are carried over
+verbatim — the day a note names, how a task figure is spelled, how a time of day
+is spelled — because each is the single place the product spells that thing
+anywhere, and a second copy of those rules is exactly the drift they exist to
+prevent. All three import nothing at all, which is what makes carrying them
+across possible. Edit them in Happy Squid; this copy is regenerated.
+
+The plugin's real logic — the line parser in `src/task-line.ts`, the note reader
+in `src/note-context.ts`, the goal arithmetic in `src/goal.ts` — is deliberately
+free of Obsidian and CodeMirror imports, so it is tested as plain functions by
+Happy Squid's own suite rather than sitting behind a second test runner.
 
 ## How a task actually starts
 
