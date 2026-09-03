@@ -1,0 +1,718 @@
+/* The control takes Obsidian's OWN semantic colours, never Happy Squid's
+   palette. A plugin that hardcoded ours would look like a foreign object in the
+   community themes most people run — and `--interactive-accent` is purple by
+   default, which is the colour asked for anyway. */
+.hs-start-task {
+  text-decoration: underline;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+/* At rest, and while the task is running: both are ACTIONS, so both wear the
+   accent. What changes is the word. */
+.hs-start-task.hs-idle,
+.hs-start-task.hs-running {
+  color: var(--interactive-accent);
+}
+
+/* All three refusals are STATES the user is being told about rather than actions
+   they chose, so they step off the accent. Still pressable — pressing re-sends,
+   which is the whole recovery after a reword, and the only thing to do about the
+   other two once the lock lapses or the week turns over. They share a colour and
+   deliberately not a label: the tone says "something stopped this", the word says
+   which thing, and the tooltip says what to do. */
+.hs-start-task.hs-refused,
+.hs-start-task.hs-blocked,
+.hs-start-task.hs-spent {
+  color: var(--text-warning, var(--text-muted));
+}
+
+/* The two faces BETWEEN the others: the press has been taken and the account has
+   not answered yet. They KEEP the accent — the press is the user's own action,
+   still in flight — and lose the underline, because the control leads nowhere
+   until the answer lands: pressing it again sends nothing (main.ts, press), and
+   the pointer goes with the underline for the same reason. Anton's call
+   (2026-09-02): purple, not underlined. */
+.hs-start-task.hs-starting,
+.hs-start-task.hs-stopping {
+  color: var(--interactive-accent);
+  text-decoration: none;
+  cursor: default;
+}
+
+.hs-start-task:hover,
+.hs-start-task:focus-visible {
+  outline: none;
+  text-decoration-thickness: 2px;
+}
+
+.hs-signin-row {
+  display: flex;
+  gap: var(--size-4-2);
+  align-items: center;
+}
+
+/* ── The Task Goal card ──────────────────────────────────────────────────────
+
+   `{taskgoal}` in a note, drawn as the phone's Task Goal row: the same 70px of
+   ground, the same two lanes, the same two lines, the same words. Four things
+   differ, and every one of them because a note is not the Home screen.
+
+   The CORNERS are rounded all round. On Home the row is the top of a stack of
+   blocks and squares its bottom into the card below it (mobile.css,
+   `.mrows-frame`); here it stands alone, so it closes itself off.
+
+   The LANES are swapped — see `.hs-goal-flame` below.
+
+   The two lines are two TIERS — see the ink block below.
+
+   The COLOURS are Obsidian's, exactly as `.hs-start-task` above takes them.
+   The phone's row is `--blue-pill` written in `--on-pill`; the same shape in
+   somebody's Minimal theme would be a foreign object. So the ground is the
+   reader's own accent at a tenth, which is how Obsidian paints its callouts
+   (app.css: `background-color: rgba(var(--callout-color), 0.1)`), and it lands
+   pale in a light theme and deep in a dark one with nothing here branching on
+   which. */
+
+.hs-goal-holder {
+  display: block;
+}
+
+/* The card is a COLUMN now: a 70px header, and under it one 70px row per task
+   that ended on the day. One unbroken ground with no dividers and no inner
+   radius — the export draws it as a single block whose only rounded corners are
+   the outer four, which `overflow: hidden` on the card gives for free. */
+.hs-goal {
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  width: 100%;
+  /* Half the note's column and no wider (Anton, 2026-08-30). The card is a 70px
+     ROW, and a row stretched across a wide editor stops reading as one — it
+     becomes a banner. `min-width` is the floor under that half: the card is
+     `overflow: hidden`, so a column narrow enough to make 50% smaller than the
+     progress line would CUT the figure rather than wrap it. It yields to the
+     column itself on a phone-width vault, where `100%` is the smaller of the
+     two, so the card fills a narrow note instead of overflowing it.
+        THE FLOOR IS THE DESIGN'S OWN WIDTH (Anton, 2026-09-01: 380 -> 420),
+     where it used to be a content-derived 360 with ~27px in hand. The two
+     numbers stopped being independent the moment the Daily Summary card gained
+     this card's gutter: its writing moved 39 + 17 to the right and the design
+     grew by that same 40 to keep the text lane it had, so the width the export
+     draws is now the width the content needs. Naming the design's number once,
+     here, is what keeps the two cards the same width in a note — which is the
+     whole reason this rule is copied there verbatim. It still clears what THIS
+     card needs by itself: the widest progress line it can print is
+     "10h 45m logged · 1h 15m left" at 195px (MEASURED at Inter 16/600), so it
+     needs 17 + 39 + 17 + 195 + 5 + 50 + 10 = 333.
+        A default vault's readable column is 700px, so 50% is 350 and the floor
+     is what most readers actually see — which is the design's own card, at the
+     width it was drawn. */
+  max-width: 50%;
+  min-width: min(100%, 420px);
+  /* The design's 15px corner — the phone card's own number rather than
+     Obsidian's `--radius-l`, because this is that card. See TaskGoalMobile.svg,
+     and `.mrow--goal` in src/view/mobile/mobile.css. */
+  border-radius: 15px;
+  background-color: hsla(var(--interactive-accent-hsl), 0.11);
+  color: var(--text-normal);
+  /* Chrome rather than prose: the card is the app's row, so it is set in the
+     interface font at the design's own size instead of inheriting whatever the
+     note's text is set in. */
+  font-family: var(--font-interface);
+  /* Not a text block — a note's own line-height would stretch the two lines
+     apart and every row is measured at 70. */
+  line-height: normal;
+  margin: var(--size-4-2) 0;
+  overflow: hidden;
+}
+
+/* The header and a task row are the same 70px of ground and the same three
+   lanes, which is what makes an open card read as one block: a gutter, the two
+   stacked lines, and whatever closes the row on the right.
+
+   `min-height` rather than `height`, because a task whose name has been opened
+   in full wraps and takes its row with it. Nothing else here can grow. */
+.hs-goal-head,
+.hs-goal-task {
+  display: flex;
+  /* TOP-BOUND, not centred (Anton, 2026-09-01). The time in the gutter and the
+     first line of the stack beside it have to sit on one line, and centring only
+     agrees with the top while the row's natural height is its content's — the
+     moment `min-height` PINS a row (a font whose line box is under 19.5px, so
+     most of them that are not Inter) the stack re-centres in the taller box and
+     the time is left standing above it. Measured in a preview with Inter it
+     looked perfect and in Obsidian it did not, which is exactly that: two
+     different line boxes, one pinned and one not. Anchoring both to the same
+     edge makes the alignment a fact about the padding rather than about the
+     reader's font, and it is what keeps a row whose name has been opened from
+     drifting as it grows. */
+  align-items: flex-start;
+  box-sizing: border-box;
+  min-height: 70px;
+  /* The design's own inset (17), gutter (39) and gap (17) — MEASURED off the
+     Anima export, where the time column starts 17 in and the writing beside it
+     starts at 73. The header's chevron is centred on that same gutter, so the
+     glyph and the times below it stand on one line. */
+  padding-left: 17px;
+  /* A row whose name has been opened GAINS the height its extra lines need; it
+     does not shuffle them into the 70 it already had (Anton, 2026-09-01). That
+     is what this padding buys, and it is the only thing that does: with
+     `min-height` and nothing else, a name wrapping to two lines still measured
+     under 70 and the row simply re-centred its contents — the meta line above it
+     stepped UP to make room, which is a row moving rather than a row growing.
+        The number is what the design's own 70 leaves around a one-line stack,
+     and it is arithmetic rather than a guess: Inter's `normal` line box at 16px
+     is 19.36, so two lines and the stack's 7px gap come to 45.7 and the design's
+     70 leaves 11.5 at each end — which is also the check that the 7px gap is
+     right, since 19.36 + 7 is the 26.5 the export's two baselines actually
+     measure. Two things land on that number at once: an ordinary row comes to
+     exactly 70 with no `min-height` slack to distribute, and the first line's
+     ink lands at 15.4 against the export's own 15.5. Each extra line of name
+     then adds exactly one line box and nothing else moves, the row being
+     top-bound. `min-height` stays as the floor under a reader whose interface
+     font sets a shorter line than Inter's. */
+  padding-top: 11.5px;
+  padding-bottom: 11.5px;
+}
+
+/* The gutter holds the header's chevron and each row's start time, and is drawn
+   whether or not there is anything in it — the same rule the flame lane has kept
+   since it was written. It is the CARD's layout, not the chevron's: without it a
+   day gaining its first task would step every line of the card sideways. */
+.hs-goal-gutter,
+.hs-goal-time {
+  flex: none;
+  width: 39px;
+  margin-right: 17px;
+}
+
+/* The one-line card — a day whose Task Goal was off. The row above is TOP-BOUND
+   so that a wrapping name grows the row downwards and so the gutter's time
+   stands level with the first line; a card with one line and an empty gutter has
+   neither, and top-binding drops all 27.6px of its slack underneath the message.
+   Centred, it matches the flame lane's own `align-self` and the chevron beside
+   it. */
+.hs-goal-head--single {
+  align-items: center;
+}
+
+.hs-goal-gutter {
+  display: flex;
+  align-items: center;
+  /* Centred in the lane (36.5 from the card's edge), where the time beside it is
+     flush left — both as drawn. */
+  justify-content: center;
+}
+
+/* The two GLYPH lanes keep the export's own centring, against a row that is
+   otherwise top-bound: the chevron's middle and the flame's sit on the row's
+   middle (MEASURED, both at y 36 of the 70). Only the WRITING is top-bound, and
+   only because two columns of writing have to share a line. */
+.hs-goal-gutter,
+.hs-goal-flame {
+  align-self: center;
+}
+
+/* A header with tasks under it is the control that opens them. The whole 70px
+   row, not just the glyph: a row wearing a chevron reads as pressable in full,
+   and the flame inside it stops its own press from reaching here. */
+.hs-goal-head[role="button"] {
+  cursor: var(--cursor);
+}
+
+/* One glyph, turned. Right while the card is shut, down while it is open — and
+   left on a task whose name is cut off, which is the export's own drawing. The
+   SVG is a square box with the chevron centred in it, so every turn is about its
+   own middle.
+
+   THE DAILY SUMMARY CARD'S GUTTER IS IN THESE LISTS RATHER THAN RESTATING THEM
+   (Anton, 2026-09-01). Its chevron used to sit after the title and turn the
+   other way — LEFT while shut — and both of those went together: a glyph in a
+   left-hand gutter that points left points away from the card it opens. Now that
+   it stands in this card's own lane it is this card's control exactly, so it is
+   one rule and cannot drift from the sibling it is meant to match. */
+.hs-goal-gutter svg,
+.hs-goal-more svg,
+.hs-daysum-gutter svg {
+  display: block;
+  flex-shrink: 0;
+  transition: transform 0.12s ease;
+}
+
+.hs-goal[data-expanded="true"] .hs-goal-gutter svg,
+.hs-daysum[data-expanded="true"] .hs-daysum-gutter svg {
+  transform: rotate(90deg);
+}
+
+.hs-goal-more svg {
+  transform: rotate(180deg);
+}
+
+.hs-goal-task[data-name-open="true"] .hs-goal-more svg {
+  transform: rotate(90deg);
+}
+
+/* The rows. Empty and contributing nothing while the card is shut — they are
+   built and torn down rather than hidden, so a shut card costs nothing and an
+   opened one is always looking at the record as it stands. */
+.hs-goal-tasks {
+  display: flex;
+  flex-direction: column;
+}
+
+/* A row's right inset. The header has none — its flame lane carries its own 10px
+   to the edge — and a row needs one because the NAME runs into it: the export
+   cuts the long name 46px short of the card's edge, which is this 30 plus the
+   16px the fade below spends. */
+.hs-goal-task {
+  padding-right: 30px;
+}
+
+/* The meta line and the name's own chevron share a line, the chevron sitting
+   after the words rather than at the row's edge — it belongs to this name, and
+   the design puts it where the sentence ends. The 14px is MEASURED. */
+.hs-goal-line {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+}
+
+/* Absent unless the name it belongs to is actually too long for its lane, which
+   goal-card.ts measures once the row is in the document and again whenever the
+   note's column changes width. `display: none` rather than hidden, so the meta
+   line beside it does not hold 14px of gap for a control nobody can press. */
+.hs-goal-more {
+  display: none;
+  align-items: center;
+  cursor: var(--cursor);
+}
+
+.hs-goal-task[data-name-long="true"] .hs-goal-more {
+  display: flex;
+}
+
+/* The name is one line, and where it runs out it is cut under a FADE rather than
+   an ellipsis (Anton, 2026-09-01) — the mask is only laid on a name that is
+   actually long, or a short one would have its last 16px quietly greyed. Opened,
+   it wraps and takes its row's height with it. */
+.hs-goal-name {
+  /* `align-self` and not just `min-width`, which is what a stack of flex
+     children needs to be CLIPPABLE at all: the stack sets `align-items:
+     flex-start`, so a child sizes to its own content and a 420px name simply
+     stood 420px wide with `overflow: hidden` clipping nothing. Stretching it to
+     the lane is what gives the overflow something to measure against — and it
+     is what puts the fade at the lane's right edge rather than at the end of
+     the words. */
+  align-self: stretch;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.hs-goal-task[data-name-long="true"][data-name-open="false"] .hs-goal-name {
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 16px), transparent 100%);
+  mask-image: linear-gradient(to right, #000 calc(100% - 16px), transparent 100%);
+}
+
+.hs-goal-task[data-name-open="true"] .hs-goal-name {
+  white-space: normal;
+  overflow: visible;
+}
+
+/* The flame's lane keeps the switch lane's own box — 50 wide, 46 tall — but
+   stands at the card's RIGHT edge rather than its left (Anton, 2026-08-30),
+   with the two margins mirrored: 5px of gutter after the name, 10px to the
+   edge. On the phone the lane is the left column because a block row's switch
+   is, and every row on that screen has to start on one line; a card standing
+   alone in a note answers to nothing beside it, so the writing takes the left
+   edge and the glyph trails it.
+      Empty while there is no streak, exactly as before — the lane holds its
+   width either way. It no longer stops the title stepping sideways, since the
+   title now meets a fixed left inset instead, but it does keep the card's right
+   edge steady the first time a streak starts. */
+.hs-goal-flame {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 50px;
+  height: 46px;
+  margin-left: 5px;
+  margin-right: 10px;
+  padding: 0;
+  border: none;
+  background: none;
+}
+
+.hs-goal-flame svg {
+  display: block;
+  flex-shrink: 0;
+}
+
+/* ── The ink ─────────────────────────────────────────────────────────────────
+
+   The phone's row is ONE hue: the ground is `--blue-pill` and everything on it
+   — both lines AND the flame — is `--on-pill`, a tinted navy. This card lost
+   that twice, taking `--text-normal` (#222222, achromatic ink) for the writing
+   and sending the flame off to `--text-accent` on its own, which made it a
+   three-colour card where the design has two. MEASURED against Obsidian's own
+   grounds: 14.08:1 in a light theme against the design's 8.60:1, a 64% harder
+   card. Dark was 10.76 against 9.44 and was never the complaint.
+
+   So the ink is pulled back toward the accent, and the flame comes with it. The
+   mix is asymmetric for free and needs no theme branch: the accent is LIGHTER
+   than the ink in a light theme and DARKER than it in a dark one, which is the
+   direction each mode needed anyway.
+
+   Two tiers rather than the phone's one, which is the one place this card is
+   allowed its own hierarchy — it stands alone in a note where the row sits in a
+   stack, and the figure is the thing that has to be read (Anton, 2026-08-30).
+   The label and the flame are the quiet lane, the figure is the loud one.
+
+   THE DAILY SUMMARY CARD IS THE SAME TWO TIERS TOO, and its four classes join
+   the two lists below rather than declaring anything: its title and chevron are
+   the quiet lane, its figures and its paragraph the loud one. That card is drawn
+   in the export in Happy Squid's blue and takes none of it, for this card's
+   reasons and one more — the two sit in one note, so a second palette would read
+   as two plugins.
+
+   THE TASK ROWS ARE THE SAME TWO TIERS AND NOT A THIRD (Anton, 2026-09-01: the
+   colours already here stay, and the new UI maps onto them). The export draws
+   the whole card in one ink and separates its lines by WEIGHT alone, and the
+   weights it uses are the two this card already had: MEASURED off the render,
+   the header's title, a row's start time and a row's "1h 17m worked · 13 blocks"
+   all set at a 1.5px stem, and the header's progress line and a row's task NAME
+   both at 2.0px. So a row's first line joins the quiet lane and its name joins
+   the loud one, and nothing new had to be chosen. The two chevrons go with the
+   flame, being glyphs rather than writing.
+
+   Both take the SAME 35%, so the tier is carried entirely by the base token —
+   `--text-muted` against `--text-normal`, Obsidian's own ramp — and the tint is
+   one number across the card. Keep it that way if these are ever retuned: two
+   mixes that happen to agree is a coincidence a later edit can break silently,
+   where one number applied twice cannot drift.
+
+   MEASURED at the DEFAULT accent: light 4.55:1 label / 8.53:1 figure, dark 5.70
+   / 7.62, against the phone row's 8.60 and 9.44.
+
+   **The label lane is thin and the tint is what makes it thin.** `--text-muted`
+   untinted is 5.88:1 on this ground; 35% toward the accent spends all but 0.05
+   of its margin over AA's 4.5. And `--interactive-accent` is the READER's, not
+   ours — swept across the hue wheel at Obsidian's own S/L, the label bottoms out
+   at 3.26:1 on a yellow accent (hue ~62), and no tint above zero clears 4.5
+   there (20% still only reaches 4.35). So a custom light accent puts the LABEL
+   under AA while the figure stays comfortable at 5.93 worst-case.
+      That is inherited exposure rather than a new hazard — Obsidian paints its
+   own links `--text-accent` at full strength and a yellow accent makes those
+   illegible too — but it is the first thing to give if this card is ever
+   reported as hard to read, and the fix is the label's tint, not the figure's.
+   Note also that light and dark do NOT mix toward the same colour: light's
+   `--interactive-accent` is `--color-accent-1` (a 7.5% lighter accent), dark's
+   is `--color-accent`. A harness that hardcodes one accent for both, as the
+   tuner first did, overstates the light label by ~0.4.
+
+   The doubled `color` is the fallback, not a mistake: an engine without
+   `color-mix` throws the second declaration out as invalid and keeps the first,
+   so nothing can end up uncoloured. Obsidian has been past Chromium 111 since
+   1.5; this covers whatever it is read in. */
+
+.hs-goal-title,
+.hs-goal-meta,
+.hs-goal-time,
+.hs-goal-flame,
+.hs-goal-gutter,
+.hs-goal-more,
+.hs-daysum-title,
+.hs-daysum-gutter {
+  color: var(--text-muted);
+  color: color-mix(in oklab, var(--text-muted), var(--interactive-accent) 35%);
+}
+
+.hs-goal-progress,
+.hs-goal-name,
+.hs-daysum-stats,
+.hs-daysum-body {
+  color: var(--text-normal);
+  color: color-mix(in oklab, var(--text-normal), var(--interactive-accent) 35%);
+}
+
+/* A row's two lines wear the header's own two, down to the weight. Said here
+   rather than by hanging the row's spans off `.hs-goal-title` and
+   `.hs-goal-progress` directly, because those two carry the header's crossfade
+   with them — a grid cell and an opacity that the pinned streak reveal drives —
+   and a task row has neither a crossfade nor any business being blanked when
+   somebody presses the flame. */
+.hs-goal-meta,
+.hs-goal-time {
+  font-size: 16px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.hs-goal-name {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+/* The flame LIFTS to the accent on reveal. It used to step between two accents,
+   which was a change nobody could see; at rest it now belongs to the block, so
+   there is somewhere for it to go. */
+.hs-goal[data-revealed="true"] .hs-goal-flame {
+  color: var(--text-accent);
+}
+
+.hs-goal-flame[role="button"] {
+  cursor: var(--cursor);
+}
+
+/* Takes the card's slack, which is what puts the flame's lane hard against the
+   right edge. `min-width: 0` is what lets it give that slack back on a narrow
+   column instead of pushing the lane off the card. */
+.hs-goal-stack {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 7px;
+  min-width: 0;
+}
+
+/* The title and the streak share ONE grid cell, so the crossfade moves nothing
+   and the lane is sized by whichever line is showing. The browser's row and the
+   phone's stack them the same way. */
+.hs-goal-titles {
+  display: grid;
+  justify-items: start;
+  min-width: 0;
+}
+
+.hs-goal-title {
+  grid-area: 1 / 1;
+  white-space: nowrap;
+  font-size: 16px;
+  /* The goal title is a 500 against the running task's 600 — the browser's row
+     carries the same difference. */
+  font-weight: 500;
+  transition: opacity 0.1s ease;
+}
+
+/* Not gated behind `prefers-reduced-motion`: the maintainer's machine runs with
+   it on, so a guarded transition is one that never plays here — see CLAUDE.md. */
+.hs-goal .hs-goal-streak,
+.hs-goal[data-revealed="true"] .hs-goal-title:not(.hs-goal-streak) {
+  opacity: 0;
+}
+
+.hs-goal[data-revealed="true"] .hs-goal-streak {
+  opacity: 1;
+}
+
+.hs-goal-progress {
+  font-size: 16px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* An accessible name with nothing on screen. It exists because Obsidian pops a
+   tooltip for every `[aria-label]` element, and on the flame that tooltip
+   repeated, in a black box over the card, the very words the title had just
+   crossfaded to. */
+.hs-goal-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ── The Daily Summary card ──────────────────────────────────────────────────
+
+   `{daysummary}` in a note, drawn from the Anima export (package WOY8B, screen
+   `DaySummaryObsidian`). The same block of ground the Task Goal card above
+   stands on, with the same 15px corner and the SAME TWO TIERS OF INK, and a
+   paragraph where that card has rows.
+
+   The COLOURS are that card's, taken by name rather than re-derived: every rule
+   below that paints something joins one of the two selector lists in the ink
+   block above. The export draws this in Happy Squid's own blue (#EBEDFF ground,
+   #31398A writing) and none of it is used, for the reason `.hs-start-task`
+   documented first — a plugin that hardcoded our palette would be a foreign
+   object in the themes people run — and for a second reason of its own: these
+   two cards sit in the same note and often on the same screen, so a second
+   palette here would read as two plugins rather than one.
+
+   THE WRITING STARTS AT 73, WHICH IS THE TASK GOAL CARD'S OWN TEXT ORIGIN
+   (Anton, 2026-09-01). This card now has that card's gutter — the same chevron
+   in the same 39px lane, on the left of the text — so it takes the whole of that
+   card's left-hand geometry with it: a 17px inset, the 39px lane, the 17px gap
+   after it. It used to have no gutter and an inset of 34, which was that same
+   17 twice with the lane taken out; putting the lane back is what turns the
+   arithmetic round again.
+      THE RIGHT INSET STAYS 34, and that is what the card growing 380 -> 420
+   pays for: 420 - 73 - 34 leaves a text lane of 313 against the 312 the export
+   drew at 380, so the stats line and the paragraph wrap exactly where they used
+   to and only the card's edges moved. (MEASURED off the export at 380: the
+   title, the stats line and all five lines of the body have a text origin of
+   34.0 ± 0.1.)
+
+   THE VERTICAL METRICS ARE THE TASK GOAL CARD'S, not the export's, and the two
+   agree to within a pixel: the export's header is 72 tall with baselines at 28
+   and 55 (padding 12.5, gap 7.64), against this card's 70 with padding 12 and a
+   7px gap. Taking the sibling's numbers is what keeps two cards in one note from
+   sitting a pixel apart for no reason a reader could name. */
+
+.hs-daysum-holder {
+  display: block;
+}
+
+/* The card's own padding rather than the header's, which is what lets the
+   paragraph sit inside the same insets and the same bottom edge — the export
+   draws one block with three lines of writing in it, not a header with a drawer
+   under it. The width rule is the Task Goal card's exactly, so the two line up
+   in a note; see that card for why half the column and why the 420 floor.
+      The two insets are no longer the same number: 17 on the left, because the
+   gutter starts there and carries the writing out to 73, and 34 on the right,
+   which is the export's own. */
+.hs-daysum {
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 50%;
+  min-width: min(100%, 420px);
+  min-height: 70px;
+  padding: 12px 34px 12px 17px;
+  border-radius: 15px;
+  background-color: hsla(var(--interactive-accent-hsl), 0.11);
+  color: var(--text-normal);
+  font-family: var(--font-interface);
+  line-height: normal;
+  margin: var(--size-4-2) 0;
+}
+
+/* The header is a ROW now — the gutter, and the two lines beside it — where it
+   used to be the two lines alone. That is the whole of the change: the card
+   below it is unmoved and the paragraph still sits in the same block of ground.
+   */
+.hs-daysum-head {
+  display: flex;
+  align-items: flex-start;
+  /* The card's own 70px row, less its 12px insets — so the header KEEPS that box
+     whether the paragraph under it is open or shut, and the chevron centres on
+     the same middle either way. That is what puts it on the sibling card's 35:
+     without it the header would centre on its own two lines, which is 45.7 under
+     Inter and shorter under most other interface fonts, and the two glyphs would
+     sit a pixel and a half apart in the same note. */
+  min-height: 46px;
+}
+
+/* The one-line header — every one of the three figures switched off in the
+   settings panel. The row is otherwise top-bound so that two lines start at the
+   header's own top edge; with one line there is nothing to align to and all of
+   the 46px box's slack would fall underneath it, leaving the card bottom-heavy
+   beside a chevron that is centred. The identical answer to the identical
+   question `.hs-goal-head--single` gives next door, and said the same way. */
+.hs-daysum-head--single {
+  align-items: center;
+}
+
+/* The whole header is the control that opens the card, not just the glyph —
+   the Task Goal card's own rule, and for its reason: a row wearing a chevron
+   reads as pressable in full. */
+.hs-daysum-head[role="button"] {
+  cursor: var(--cursor);
+}
+
+/* The gutter is the Task Goal card's lane exactly — 39 wide with the 17px gap
+   after it, which is what puts this card's writing at that card's own 73 — and
+   it is drawn whether or not there is a chevron in it, for that card's reason:
+   without it, a day gaining its summary the next morning would step every line
+   of the card 56px sideways.
+      CENTRED on the HEADER, not on the card, so that opening the paragraph
+   underneath leaves the glyph exactly where it was — which is the sibling's
+   behaviour too, its rows arriving below a header that does not move. The header
+   is pinned to the card's 70px row less its 12px insets (above), so the chevron
+   lands at 35 from the card's top; the sibling's is at 35 of its own 70, and the
+   export draws both at 36. VERIFIED in the preview harness, both cards, shut and
+   open: x 30.36, mid-y 35. */
+.hs-daysum-gutter {
+  flex: none;
+  display: flex;
+  align-self: center;
+  align-items: center;
+  /* Centred in the lane, exactly as the sibling's is (36.5 from the card's
+     edge). */
+  justify-content: center;
+  width: 39px;
+  margin-right: 17px;
+}
+
+/* The header's two lines, at the Task Goal card's own 7px. `min-width: 0` so the
+   stats line beside a fixed lane can still give its slack back and wrap, rather
+   than pushing the card wider than its column. */
+.hs-daysum-titles {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 7px;
+  min-width: 0;
+}
+
+.hs-daysum-title {
+  font-size: 16px;
+  font-weight: 500;
+}
+
+/* The figures WRAP where the Task Goal card's progress line is clipped, and that
+   is the one place the two headers part company. That card sets its line
+   `nowrap` because it shares a row with a flame lane it has to keep; this line
+   has only the gutter beside it, and it cannot always fit — a long day
+   ("10h 45m tasks · 10h 45m free time · 128 blocks") runs past even the design's
+   own card. Clipping it would silently take a figure off the page; wrapping only
+   ever makes the card taller. (The design's own line measures 295px at
+   Obsidian's default interface font, which the 313px lane at this card's floor
+   now clears — it did not at 380, where the lane was 292 and the drawn line
+   overran it.)
+      So it wraps where a SENTENCE does. Each figure is its own unbreakable span
+   with the middle dot drawn between them, which is what stops a wrap parting "8"
+   from "blocks". */
+.hs-daysum-stats {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.hs-daysum-stat {
+  white-space: nowrap;
+}
+
+/* The paragraph. 14px against the header's 16, at the TITLE's 500 rather than
+   the figure's 600 — both MEASURED off the export, and the mismatch is real: at
+   14px a 600 paragraph reads as a heading. It takes the loud INK all the same,
+   because it is what the card is for.
+      Empty and contributing nothing while the card is shut: the text is written
+   in and cleared rather than hidden, so a shut card costs nothing. */
+.hs-daysum-body {
+  font-size: 14px;
+  font-weight: 500;
+  /* The gutter plus its gap, which is what puts the paragraph's left edge on the
+     header's rather than on the card's — one column of writing at 73, the way
+     the Task Goal card's rows all start at 73. Said as the lane's own two
+     numbers rather than as 56, so the two move together if the lane ever does.
+     */
+  margin-left: calc(39px + 17px);
+}
+
+.hs-daysum[data-expanded="true"] .hs-daysum-body {
+  /* 8px between the stats line box and the paragraph's first, against the
+     header's own 7 — MEASURED at 8.58 off the export, where the two tiers of the
+     header sit at 7.64. Kept as a number of its own rather than rounded onto the
+     header's, because it is the seam between the card and its expansion. */
+  margin-top: 8px;
+}

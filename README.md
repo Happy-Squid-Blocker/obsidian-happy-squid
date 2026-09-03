@@ -78,8 +78,10 @@ analytics. Happy Squid's privacy policy is at
 
 **Files.** The plugin reads and writes notes inside the vault only, and the only
 edits it ever makes are the four listed under [The Task Goal card](#in-a-template).
-Your session is kept in the plugin's own `data.json` inside the vault — see
-[Signing in](#signing-in).
+Everything it stores for itself — your session, the days it has archived, the
+settings below — goes through Obsidian's own plugin data API, into
+`.obsidian/plugins/happy-squid/data.json` inside the vault. It writes nothing to
+`localStorage` and nothing outside the vault. See [Signing in](#signing-in).
 
 ## The Task Goal card
 
