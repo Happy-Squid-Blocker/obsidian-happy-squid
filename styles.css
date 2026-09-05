@@ -43,7 +43,6 @@
 .hs-start-task:hover,
 .hs-start-task:focus-visible {
   outline: none;
-  text-decoration-thickness: 2px;
 }
 
 .hs-signin-row {
@@ -293,10 +292,9 @@
   display: flex;
 }
 
-/* The name is one line, and where it runs out it is cut under a FADE rather than
-   an ellipsis (Anton, 2026-09-01) — the mask is only laid on a name that is
-   actually long, or a short one would have its last 16px quietly greyed. Opened,
-   it wraps and takes its row's height with it. */
+/* The name is one line, and where it runs out the ellipsis leaves the adjacent
+   expansion control visible. Opened, it wraps and takes its row's height with
+   it. */
 .hs-goal-name {
   /* `align-self` and not just `min-width`, which is what a stack of flex
      children needs to be CLIPPABLE at all: the stack sets `align-items:
@@ -312,8 +310,7 @@
 }
 
 .hs-goal-task[data-name-long="true"][data-name-open="false"] .hs-goal-name {
-  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 16px), transparent 100%);
-  mask-image: linear-gradient(to right, #000 calc(100% - 16px), transparent 100%);
+  text-overflow: ellipsis;
 }
 
 .hs-goal-task[data-name-open="true"] .hs-goal-name {
@@ -413,10 +410,8 @@
    is `--color-accent`. A harness that hardcodes one accent for both, as the
    tuner first did, overstates the light label by ~0.4.
 
-   The doubled `color` is the fallback, not a mistake: an engine without
-   `color-mix` throws the second declaration out as invalid and keeps the first,
-   so nothing can end up uncoloured. Obsidian has been past Chromium 111 since
-   1.5; this covers whatever it is read in. */
+   The `@supports` block keeps the plain semantic colours as the fallback on an
+   engine without `color-mix`. */
 
 .hs-goal-title,
 .hs-goal-meta,
@@ -427,7 +422,6 @@
 .hs-daysum-title,
 .hs-daysum-gutter {
   color: var(--text-muted);
-  color: color-mix(in oklab, var(--text-muted), var(--interactive-accent) 35%);
 }
 
 .hs-goal-progress,
@@ -435,7 +429,26 @@
 .hs-daysum-stats,
 .hs-daysum-body {
   color: var(--text-normal);
-  color: color-mix(in oklab, var(--text-normal), var(--interactive-accent) 35%);
+}
+
+@supports (color: color-mix(in oklab, black, white)) {
+  .hs-goal-title,
+  .hs-goal-meta,
+  .hs-goal-time,
+  .hs-goal-flame,
+  .hs-goal-gutter,
+  .hs-goal-more,
+  .hs-daysum-title,
+  .hs-daysum-gutter {
+    color: color-mix(in oklab, var(--text-muted), var(--interactive-accent) 35%);
+  }
+
+  .hs-goal-progress,
+  .hs-goal-name,
+  .hs-daysum-stats,
+  .hs-daysum-body {
+    color: color-mix(in oklab, var(--text-normal), var(--interactive-accent) 35%);
+  }
 }
 
 /* A row's two lines wear the header's own two, down to the weight. Said here
@@ -527,7 +540,6 @@
   margin: -1px;
   padding: 0;
   overflow: hidden;
-  clip-path: inset(50%);
   white-space: nowrap;
   border: 0;
 }

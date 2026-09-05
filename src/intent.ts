@@ -1,5 +1,7 @@
+import { requestUrl } from "obsidian";
 import type { Auth } from "./auth";
 import { functionUrl, SUPABASE_PUBLISHABLE_KEY, SUPABASE_URL } from "./config";
+import { isSuccessfulResponse } from "./request";
 
 /**
  * Asking Happy Squid to start a task.
@@ -71,12 +73,13 @@ export async function latestStartIntentId(auth: Auth, sourceTaskId: string): Pro
   const session = await auth.session();
   if (!session) return null;
   try {
-    const res = await fetch(
-      `${SUPABASE_URL}/rest/v1/task_intents?select=id&source=eq.obsidian&kind=eq.start&source_task_id=eq.${encodeURIComponent(sourceTaskId)}&order=created_at.desc&limit=1`,
-      { headers: { apikey: SUPABASE_PUBLISHABLE_KEY, Authorization: `Bearer ${session.access_token}` } },
-    );
-    if (!res.ok) return null;
-    const rows = (await res.json()) as { id?: unknown }[];
+    const res = await requestUrl({
+      url: `${SUPABASE_URL}/rest/v1/task_intents?select=id&source=eq.obsidian&kind=eq.start&source_task_id=eq.${encodeURIComponent(sourceTaskId)}&order=created_at.desc&limit=1`,
+      headers: { apikey: SUPABASE_PUBLISHABLE_KEY, Authorization: `Bearer ${session.access_token}` },
+      throw: false,
+    });
+    if (!isSuccessfulResponse(res)) return null;
+    const rows = res.json as { id?: unknown }[];
     const id = Array.isArray(rows) ? rows[0]?.id : undefined;
     return typeof id === "string" && id ? id : null;
   } catch (e) {
@@ -89,17 +92,19 @@ async function post(auth: Auth, body: Record<string, unknown>): Promise<StartRes
   const session = await auth.session();
   if (!session) return { ok: false, reason: "signed-out" };
   try {
-    const res = await fetch(functionUrl("obsidian-intent"), {
+    const res = await requestUrl({
+      url: functionUrl("obsidian-intent"),
       method: "POST",
       headers: {
         Authorization: `Bearer ${session.access_token}`,
         apikey: SUPABASE_PUBLISHABLE_KEY,
-        "Content-Type": "application/json",
       },
+      contentType: "application/json",
       body: JSON.stringify(body),
+      throw: false,
     });
-    if (!res.ok) {
-      console.warn("[happy-squid] intent rejected", res.status, await res.text().catch(() => ""));
+    if (!isSuccessfulResponse(res)) {
+      console.warn("[happy-squid] intent rejected", res.status, res.text);
       return { ok: false, reason: res.status === 401 ? "signed-out" : "failed" };
     }
     return { ok: true };

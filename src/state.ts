@@ -1,6 +1,7 @@
 import type { Auth } from "./auth";
 import { SUPABASE_PUBLISHABLE_KEY, SUPABASE_URL } from "./config";
 import { readSnapshotSummary, readSnapshotTasks, type GoalSnapshot, type GoalValue, type SnapshotGoal } from "./goal";
+import { type HttpRequest, isSuccessfulResponse } from "./request";
 import { notePathOf, taskIdFor } from "./task-line";
 import { dayKeyStart } from "./vendor/day-key";
 
@@ -55,11 +56,8 @@ interface Pending {
   sourceTaskId: string;
   /** The intent row the press made, once known — see attachIntent. */
   intentId: string | null;
-  /** Bare `setTimeout`, not `window.setTimeout`: this file is held by the
-   *  extension's node-side suite (src/tests/obsidian/) and has no window, and
-   *  the timer is a bookkeeping deadline rather than anything a popout window
-   *  could own. */
-  timer: ReturnType<typeof setTimeout>;
+  /** Kept on the host window so Obsidian can cleanly manage popout windows. */
+  timer: number;
 }
 
 /**
@@ -153,7 +151,10 @@ export class TaskStates {
    */
   signedIn = false;
 
-  constructor(private auth: Auth) {}
+  constructor(
+    private auth: Auth,
+    private request: HttpRequest,
+  ) {}
 
   onChange(fn: () => void): () => void {
     this.listeners.add(fn);
@@ -237,23 +238,32 @@ export class TaskStates {
     };
     try {
       const [taskRes, goalRes, refusedRes] = await Promise.all([
-        fetch(`${SUPABASE_URL}/rest/v1/user_state?select=value&key=eq.activeTask`, { headers }),
+        this.request({
+          url: `${SUPABASE_URL}/rest/v1/user_state?select=value&key=eq.activeTask`,
+          headers,
+          throw: false,
+        }),
         // The same table and the same shape, one row along. `taskGoal` is a
         // synced Model key (src/shared/sync-keys.ts), so the goal a note draws
         // is the account's own and needs nothing invented for it.
-        fetch(`${SUPABASE_URL}/rest/v1/user_state?select=key,value&key=in.(taskGoal,taskDays)`, { headers }),
+        this.request({
+          url: `${SUPABASE_URL}/rest/v1/user_state?select=key,value&key=in.(taskGoal,taskDays)`,
+          headers,
+          throw: false,
+        }),
         // Only this source's refusals, and only the ones a marker could still be
         // sitting in front of. A task refused last month is not news.
-        fetch(
-          `${SUPABASE_URL}/rest/v1/task_intents?select=id,source_task_id,payload,result,result_detail&source=eq.obsidian&kind=eq.start&result=not.is.null&order=created_at.desc&limit=40`,
-          { headers },
-        ),
+        this.request({
+          url: `${SUPABASE_URL}/rest/v1/task_intents?select=id,source_task_id,payload,result,result_detail&source=eq.obsidian&kind=eq.start&result=not.is.null&order=created_at.desc&limit=40`,
+          headers,
+          throw: false,
+        }),
       ]);
-      if (!taskRes.ok || !refusedRes.ok) return;
+      if (!isSuccessfulResponse(taskRes) || !isSuccessfulResponse(refusedRes)) return;
       // Read BESIDE the task rather than gated with it: a failed goal read must
       // not cost the marker its face, and a goal that has never been set has no
       // row at all, which is a null and not an error.
-      const goalRows: unknown = goalRes.ok ? await goalRes.json() : [];
+      const goalRows = isSuccessfulResponse(goalRes) ? goalRes.json : [];
       const goal = readGoal(rowValue(goalRows, "taskGoal"));
       // The account's own record of ended days. Read here rather than derived
       // from the row above because it is the one thing the row CANNOT say: it
@@ -262,13 +272,13 @@ export class TaskStates {
       this.goalDays = readGoalDays(rowValue(goalRows, "taskDays"));
       this.signedIn = true;
 
-      const active = (await taskRes.json()) as { value: ActiveTaskRow | null }[];
+      const active = taskRes.json as { value: ActiveTaskRow | null }[];
       const task = active[0]?.value ?? null;
       const title = task?.origin?.source === "obsidian" ? (task.origin.title ?? null) : null;
       const taskId = task?.origin?.source === "obsidian" ? (task.origin.taskId ?? null) : null;
       this.rewrite = rewriteOf(task);
 
-      const rows = (await refusedRes.json()) as OutcomeRow[];
+      const rows = refusedRes.json as OutcomeRow[];
       const refused = new Map<string, { result: Refusal; detail: string }>();
       const seen = new Set<string>();
       this.completed = [];
@@ -321,7 +331,7 @@ export class TaskStates {
     const key = title.trim();
     if (!key) return;
     this.forget(key);
-    const timer = setTimeout(() => this.dropPending(key), PENDING_TTL_MS);
+    const timer = window.setTimeout(() => this.dropPending(key), PENDING_TTL_MS);
     this.pending.set(key, { kind, sourceTaskId, intentId: null, timer });
     this.redraw();
   }
@@ -349,7 +359,7 @@ export class TaskStates {
   private forget(key: string): boolean {
     const pending = this.pending.get(key);
     if (!pending) return false;
-    clearTimeout(pending.timer);
+    window.clearTimeout(pending.timer);
     this.pending.delete(key);
     return true;
   }

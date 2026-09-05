@@ -53,7 +53,7 @@ bullet is read as structure, so the boxes hanging off it come too while the
 bullet itself does not. Ticked boxes are left out, being work already done. The
 list stops at twenty and says how many it left behind.
 
-There is also a command, **Start or stop task under cursor**, which needs no
+There is also a command, **Start or stop task at caret**, which needs no
 rendering and works in Live Preview, reading view and source mode alike. Give it
 a hotkey.
 

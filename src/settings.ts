@@ -1,4 +1,4 @@
-import { type App, PluginSettingTab, Setting } from "obsidian";
+import { type App, PluginSettingTab, Setting, type SettingDefinitionItem } from "obsidian";
 import type { Auth } from "./auth";
 import { DAY_SUMMARY_TITLE, type DaySummaryVisibility } from "./goal";
 import type HappySquidPlugin from "./main";
@@ -79,6 +79,52 @@ export class HappySquidSettingTab extends PluginSettingTab {
     super(app, plugin);
   }
 
+  /** Obsidian 1.13's searchable settings; `display` below remains the fallback
+   *  for older supported app versions. The account rows stay custom because
+   *  their shape changes across an asynchronous sign-in flow, while the four
+   *  stored booleans fit the declarative controls directly. */
+  getSettingDefinitions(): SettingDefinitionItem[] {
+    return [
+      {
+        name: "Account",
+        desc: "Loading account…",
+        aliases: ["Email", "Sign in", "Log out"],
+        render: (setting) => {
+          let current = true;
+          void this.populateAccount(setting, () => current);
+          return () => {
+            current = false;
+          };
+        },
+      },
+      {
+        name: "Code",
+        desc: this.failed === "code" ? BAD_CODE : "The six-digit code sent to your email.",
+        visible: () => this.codeSent,
+        render: (setting) => this.populateCode(setting),
+      },
+      {
+        type: "group",
+        heading: DAY_SUMMARY_TITLE,
+        items: DAY_SUMMARY_SWITCHES.map(({ key, name }) => ({
+          name,
+          control: { type: "toggle", key },
+        })),
+      },
+    ];
+  }
+
+  getControlValue(key: string): unknown {
+    const preference = DAY_SUMMARY_SWITCHES.find((item) => item.key === key);
+    return preference ? this.daySummary.read()[preference.key] : undefined;
+  }
+
+  async setControlValue(key: string, value: unknown): Promise<void> {
+    const preference = DAY_SUMMARY_SWITCHES.find((item) => item.key === key);
+    if (!preference || typeof value !== "boolean") return;
+    await this.daySummary.write({ ...this.daySummary.read(), [preference.key]: value });
+  }
+
   display(): void {
     void this.render();
   }
@@ -115,10 +161,16 @@ export class HappySquidSettingTab extends PluginSettingTab {
   }
 
   private async renderAccount(): Promise<void> {
-    const { containerEl } = this;
+    const signedIn = await this.populateAccount(new Setting(this.containerEl));
+    if (signedIn !== false || !this.codeSent) return;
+    this.populateCode(new Setting(this.containerEl));
+  }
+
+  private async populateAccount(setting: Setting, current: () => boolean = () => true): Promise<boolean | null> {
     const signedInAs = await this.auth.email();
+    if (!current()) return null;
     if (signedInAs) {
-      new Setting(containerEl)
+      setting
         .setName("Account")
         .setDesc(signedInAs)
         .addButton((b) =>
@@ -128,14 +180,14 @@ export class HappySquidSettingTab extends PluginSettingTab {
             this.email = "";
             this.failed = null;
             this.onAccountChanged();
-            void this.render();
+            this.rerender();
           }),
         );
-      return;
+      return true;
     }
 
     // Signed out. The same six-digit email code the extension and the apps use.
-    new Setting(containerEl)
+    setting
       .setName("Email")
       .setDesc(this.failed === "email" ? BAD_EMAIL : "Sign in to use Happy Squid.")
       .addText((t) =>
@@ -155,19 +207,20 @@ export class HappySquidSettingTab extends PluginSettingTab {
             // Re-rendered rather than returned from: the refusal IS the state
             // change, and without one the button reads as having done nothing.
             this.failed = "email";
-            void this.render();
+            this.rerender();
             return;
           }
           this.failed = null;
           this.codeSent = true;
-          void this.render();
+          this.rerender();
         }),
       );
+    return false;
+  }
 
-    if (!this.codeSent) return;
-
+  private populateCode(setting: Setting): void {
     let code = "";
-    new Setting(containerEl)
+    setting
       .setName("Code")
       .setDesc(this.failed === "code" ? BAD_CODE : "The six-digit code sent to your email.")
       // The field is built fresh on every render and carries no `setValue`, so a
@@ -185,13 +238,22 @@ export class HappySquidSettingTab extends PluginSettingTab {
           if (error) {
             console.warn("[happy-squid] could not verify code", error);
             this.failed = "code";
-            void this.render();
+            this.rerender();
             return;
           }
           this.failed = null;
+          this.codeSent = false;
           this.onAccountChanged();
-          void this.render();
+          this.rerender();
         }),
       );
+  }
+
+  /** `update` exists in Obsidian 1.13; older supported versions call the
+   *  imperative `display` fallback and need that same path refreshed. */
+  private rerender(): void {
+    const update: unknown = Reflect.get(this, "update");
+    if (typeof update === "function") update.call(this);
+    else void this.render();
   }
 }

@@ -1,6 +1,6 @@
 {
   "name": "happy-squid-obsidian",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Start and stop Happy Squid tasks from checkboxes in your notes, and show your Task Goal, daily summary and focus figures beside them.",
   "type": "module",
   "scripts": {
@@ -12,8 +12,7 @@
   "devDependencies": {
     "@codemirror/state": "6.5.0",
     "@codemirror/view": "6.38.6",
-    "builtin-modules": "^3.3.0",
-    "esbuild": "^0.21.5",
+    "esbuild": "^0.28.2",
     "eslint": "^9.39.5",
     "eslint-plugin-obsidianmd": "^0.4.2",
     "obsidian": "^1.5.7",

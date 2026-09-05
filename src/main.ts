@@ -1,4 +1,4 @@
-import { MarkdownView, Notice, Plugin, TFile, type EditorPosition, type TAbstractFile } from "obsidian";
+import { MarkdownView, Notice, Plugin, requestUrl, TFile, type EditorPosition, type TAbstractFile } from "obsidian";
 import { Auth } from "./auth";
 import { completeTask, latestStartIntentId, startTask } from "./intent";
 import { decorateReadingView, markerExtension } from "./marker";
@@ -108,7 +108,7 @@ export default class HappySquidPlugin extends Plugin {
         await this.saveData(this.data);
       },
     });
-    this.states = new TaskStates(this.auth);
+    this.states = new TaskStates(this.auth, requestUrl);
     // Told rather than asked: without this the marker cannot move until the next
     // poll, which is up to thirty seconds of a control that looks unpressed.
     this.live = new Live(this.auth, () => void this.sync());
@@ -191,7 +191,7 @@ export default class HappySquidPlugin extends Plugin {
     // Live Preview, reading view and source mode alike.
     this.addCommand({
       id: "start-task-under-cursor",
-      name: "Start or stop task under cursor",
+      name: "Start or stop task at caret",
       editorCheckCallback: (checking, editor) => {
         const title = titleOf(editor.getLine(editor.getCursor().line));
         if (!title) return false;
