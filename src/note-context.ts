@@ -1,4 +1,4 @@
-import { findTaskLine, MARKER, parseTaskLine, taskIdFor } from "./task-line";
+import { findTaskLine, MARKER, openPrefix, parseTaskLine, taskIdFor } from "./task-line";
 
 /**
  * Where a task sits in a note, in the shape the two AI calls already read.
@@ -144,20 +144,25 @@ function descriptionUnder(lines: string[], index: number, indent: number): strin
 }
 
 /**
- * The open checkboxes under the item on `index` — its subtasks.
+ * The open list items under the item on `index` — its subtasks.
  *
  * The WHOLE subtree, flattened into document order (Anton, 2026-09-03), rather
  * than the direct children `parentOf` would have as this function's mirror: a
- * user who nests two levels means the deeper boxes just as much, and the cap is
+ * user who nests two levels means the deeper items just as much, and the cap is
  * what keeps that affordable instead of the depth.
  *
  * Three rules, and each of them is what the list is FOR:
  *
- *  - **Only checkbox items.** A nested plain bullet is structure or a note, not
- *    work — but it is DESCENDED THROUGH, so `- Backend` holding three boxes
- *    contributes its three boxes and not itself.
+ *  - **Every list item, boxed or plain.** A plain bullet under a task was
+ *    structure to be descended THROUGH and never listed until a plain item
+ *    became a task in its own right (Anton, 2026-09-07); with `- Write it` a
+ *    task the user can start, `- outline it` nested under one is what the task
+ *    is made of, exactly as `- [ ] outline it` always was. The cost is stated:
+ *    a nested bullet that is a NOTE rather than a step rides along as a
+ *    subtask, which the cap bounds and the user's own indentation decides.
  *  - **Only OPEN ones.** What is left to do is what the squid judges a website
- *    against; a ticked box is spent and would only cost cap slots.
+ *    against; a ticked box or a struck-through item is spent and would only
+ *    cost cap slots.
  *  - **A blank line does not end the list**, which is the one place this parts
  *    company with `descriptionUnder` above. There a blank line ends the item's
  *    prose, because prose is a paragraph; here it is a loose list's own
@@ -177,7 +182,7 @@ function subtasksUnder(lines: string[], index: number, indent: number): { titles
     if (!line.trim()) continue;
     if (indentOf(line) <= indent) break;
     const parsed = parseTaskLine(line);
-    if (!parsed || parsed.checked || !parsed.title) continue;
+    if (!parsed || parsed.done || !parsed.title) continue;
     if (titles.length < SUBTASK_LIMIT) titles.push(parsed.title);
     else more += 1;
   }
@@ -321,8 +326,10 @@ export function composeNoteContext(params: { notePath: string; text: string; tit
  * line goes AFTER the item's whole subtree (its description lines and any
  * nested items, by the same indent rule `descriptionUnder` reads), so it lands
  * as the item's next sibling rather than between the item and its own notes,
- * and it wears the item's own prefix with the box open — the same bullet and
- * the same indent, so it reads as a task the user could have typed there.
+ * and it wears the item's own prefix with the box open (`openPrefix`; a plain
+ * item's is its bullet alone, so the wording lands as a plain item under a
+ * plain one) — the same bullet and the same indent, so it reads as a task the
+ * user could have typed there.
  *
  * Null, and the note untouched, when the line the id names is not in this note
  * any more (renamed, reworded, moved), and when a marked task already carries
@@ -345,7 +352,6 @@ export function insertTaskBelow(text: string, notePath: string, sourceTaskId: st
   const indent = indentOf(lines[at]);
   let after = at;
   while (after + 1 < lines.length && lines[after + 1].trim() && indentOf(lines[after + 1]) > indent) after++;
-  const prefix = original.prefix.replace(/\[[xX]\]/, "[ ]");
-  lines.splice(after + 1, 0, `${prefix}${wording} ${MARKER}`);
+  lines.splice(after + 1, 0, `${openPrefix(original.prefix)}${wording} ${MARKER}`);
   return lines.join("\n");
 }

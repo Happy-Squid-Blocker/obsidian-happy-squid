@@ -8,7 +8,8 @@
  * is the feature rather than a description of it — press the control, and the
  * card fills in the moment the account answers.
  *
- * The copy is Anton's (2026-09-03) and is not to be rewritten here.
+ * The copy is Anton's (2026-09-03, revised 2026-09-05) and is not to be rewritten
+ * here.
  *
  * Four things about the plugin decide what may be written, and all four are
  * worth knowing before editing the text:
@@ -38,7 +39,7 @@
 
 /** Where the note is written, at the vault root. Never overwritten: a vault
  *  that already has a file by this name keeps it, and nothing is created. */
-export const WELCOME_PATH = "Happy Squid.md";
+export const WELCOME_PATH = "Welcome to Happy Squid.md";
 
 /**
  * The note's text.
@@ -47,12 +48,10 @@ export const WELCOME_PATH = "Happy Squid.md";
  * gets, and so a future version can vary it without every caller changing.
  */
 export function welcomeNote(): string {
-  return `# Welcome to Happy Squid
+  return `This plugin connects your notes to Happy Squid: start a task from a checkbox,
+and pull Happy Squid's stats about your day into your notes.
 
-This plugin connects your notes to Happy Squid: start a task from a checkbox,
-and pull what you actually did back into your daily notes.
-
-## First, sign in
+## Sign in
 
 Open **Settings → Happy Squid** and sign in with the six-digit code sent to your
 email.
@@ -62,7 +61,7 @@ email.
 - [ ] Try Happy Squid {task}
 
 Write {task} after any checkbox to create a start task button. After the task
-was send to Happy Squid the button automatically switches to stop task.
+was sent to Happy Squid the button automatically switches to stop task.
 
 Complete a task by clicking the checkmark icon in Happy Squid or Obsidian.
 Completing a task stops it automatically.
@@ -73,7 +72,7 @@ Your Task Goal, as it stands right now:
 
 {taskgoal:today}
 
-Press it to see the tasks the day was made of.
+Open it to see the tasks the day was made of.
 
 The day at a glance, with the account of it that Happy Squid writes each
 morning, once the day has ended:
@@ -93,7 +92,7 @@ Every marker here says today, for example {"taskgoal:today"} (quotation marks
 just to show the marker, remove quotation marks for the marker to work) so it
 always shows the day it is read on.
 
-Leave the day out and the plugin fills in the day you wrote it, which is what
+Leave the day out and the plugin fills in today's date, which is what
 makes a daily note still read correctly a year later. Write a concrete date to
 get the data for that day, for example {"taskgoal:01.09.2026"}
 
@@ -101,7 +100,7 @@ When setting up a template use {"taskgoal:template"}. In the template that
 always shows today, when creating a note from that template it inserts the date
 you are creating the new note. {"daysummary:template"} becomes
 {"daysummary:2026-09-01"} when you are creating the note on the first of
-september.
+September.
 
 ## Where to read more
 
@@ -110,6 +109,6 @@ plugins**, and the settings tab has a switch for each part of the daily summary
 card. Also under happy-squid.com/documentation#integrations.
 
 You can delete this note whenever you like. It is written once, when the plugin
-is first installed, and never again.
+is first installed.
 `;
 }

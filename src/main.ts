@@ -35,14 +35,15 @@ import { dayKey } from "./vendor/day-key";
 /**
  * Happy Squid for Obsidian.
  *
- * Type `{task}` after a checkbox and it draws as "start task"; pressing it asks
- * Happy Squid to start that task. While that task is the one running it reads
- * "stop task", and if the productivity check refused it, "task deemed not
- * productive" — one control with three faces, because what you can do with a
- * task depends entirely on what became of it. And the BOX is the control's
- * other half: ticking it while the task runs finishes the task, exactly as
- * "stop task" does (Anton, 2026-09-02), and finishing it in Happy Squid ticks
- * the box.
+ * Type `{task}` after a list item — a checkbox or a plain bullet — and it draws
+ * as "start task"; pressing it asks Happy Squid to start that task. While that
+ * task is the one running it reads "stop task", and if the productivity check
+ * refused it, "task deemed not productive" — one control with three faces,
+ * because what you can do with a task depends entirely on what became of it.
+ * And the BOX is the control's other half: ticking it while the task runs
+ * finishes the task, exactly as "stop task" does (Anton, 2026-09-02), and
+ * finishing it in Happy Squid ticks the box. A plain item has no box, so its
+ * strikethrough stands in for it both ways (Anton, 2026-09-07).
  *
  * The messages below are the extension's OWN, lifted verbatim from the Todoist
  * entry point and the auth gate, because this is the same action reaching the
@@ -585,6 +586,6 @@ function tickKey(notePath: string, title: string): string {
 function titleOf(lineText: string): string | null {
   if (!lineText.includes(MARKER)) return null;
   const parsed = parseTaskLine(lineText);
-  if (!parsed || parsed.checked || !parsed.title) return null;
+  if (!parsed || parsed.done || !parsed.title) return null;
   return parsed.title;
 }

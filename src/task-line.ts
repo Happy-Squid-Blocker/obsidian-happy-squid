@@ -75,7 +75,8 @@ export const LABEL_STARTING = "starting…";
 /** The same promise for "stop task". See LABEL_STARTING. */
 export const LABEL_STOPPING = "stopping…";
 
-// Group 1 is the whole "- [ ] " prefix, group 2 the character inside the box.
+// Group 1 is the whole "- [ ] " prefix, group 2 the character inside the box —
+// undefined on a PLAIN list item, which has no box.
 //
 // The box admits ANY single character, and an ORDERED-list number is a bullet
 // like any other. Both were narrower — `[ xX]` and `[-*+]` — until the plugin
@@ -85,7 +86,33 @@ export const LABEL_STOPPING = "stopping…";
 // progress watched the control turn back into five characters of raw text, with
 // nothing to report but "it stopped working". Which character sits in the box is
 // the theme's business and Tasks'; ours is only whether the task is still open.
-const TASK_LINE_RE = /^(\s*(?:[-*+]|\d+[.)])\s+\[([^\]])\]\s+)/;
+//
+// And the box is OPTIONAL (Anton, 2026-09-07): a plain `- Write the report` is a
+// task too, for the many people whose lists have no checkboxes in them. What a
+// plain item has no box to say, its STRIKETHROUGH says — see `unstrike`. A box
+// with nothing after it (`- [ ]` at the end of a line) is still a box rather
+// than a plain item whose words are "[ ]".
+const TASK_LINE_RE = /^(\s*(?:[-*+]|\d+[.)])\s+(?:\[([^\]])\](?:\s+|$))?)/;
+
+/**
+ * The words inside a strikethrough that covers the WHOLE title, or null.
+ *
+ * A plain list item has no box to tick, so "done" is the one mark markdown
+ * gives an item with nothing left to do: `~~Write the report~~`. Only a strike
+ * over everything counts — `~~almost~~ done` is words with a correction in
+ * them, and so is `~~a~~ and ~~b~~`, which is why the inside may hold no `~~`
+ * of its own. The tildes are the STATE and not the words, so the title read
+ * out of a struck item is the same title its open form had, which is what lets
+ * a strike be told apart from a rewording (`tickedTitles`) and what lets the
+ * completion find the line it is about to strike (`findTaskLine`).
+ */
+function unstrike(text: string): string | null {
+  const trimmed = text.trim();
+  if (trimmed.length < 5 || !trimmed.startsWith("~~") || !trimmed.endsWith("~~")) return null;
+  const inner = trimmed.slice(2, -2).trim();
+  if (!inner || inner.includes("~~")) return null;
+  return inner;
+}
 
 /**
  * The boxes that mean "nothing left to start".
@@ -183,15 +210,60 @@ export function stripMetadata(title: string): string {
  */
 function setBox(line: string, box: string): string {
   const m = TASK_LINE_RE.exec(line);
-  if (!m) return line;
+  if (!m || m[2] === undefined) return line;
   const at = m[1].indexOf("[");
   return line.slice(0, at + 1) + box + line.slice(at + 2);
 }
 
+/**
+ * Marking a line done in the one way its shape allows: `x` into the box, or —
+ * on a plain item, which has none — a strikethrough around its words.
+ *
+ * The strike goes round the WHOLE raw title, annotations included, because
+ * that is what a hand crossing an item out does; `unstrike` reads the words
+ * back out of it before the annotations are stripped, so the title survives
+ * the round trip. A line with no words is left alone: there is nothing to
+ * strike, and `~~~~` would be a done item named nothing.
+ */
+function markDone(line: string): string {
+  const parsed = parseTaskLine(line);
+  if (!parsed) return line;
+  if (parsed.box !== null) return setBox(line, "x");
+  const start = parsed.prefix.length;
+  const end = start + line.slice(start, parsed.markerStart < 0 ? line.length : parsed.markerStart).trimEnd().length;
+  if (end <= start) return line;
+  return `${line.slice(0, start)}~~${line.slice(start, end)}~~${line.slice(end)}`;
+}
+
+/**
+ * The prefix a NEW task beside this one should wear: the same bullet and
+ * indent, with the box open — whatever this line's box held, done, cancelled
+ * or in progress, the task being written has not started. A plain item's
+ * prefix has no box and comes back as it is.
+ */
+export function openPrefix(prefix: string): string {
+  return prefix.replace(/\[[^\]]\]/, "[ ]");
+}
+
+/**
+ * The prefix the NEXT line of a list should wear, for the Enter handler: the
+ * open prefix above, and a NUMBERED bullet counted up as Obsidian's own list
+ * continuation counts it, so a marker carried onto the line after
+ * `3. Write it {task}` lands on a `4.` rather than a second `3.`.
+ */
+export function nextPrefix(prefix: string): string {
+  return openPrefix(prefix).replace(/\d+(?=[.)]\s)/, (n) => String(Number(n) + 1));
+}
+
 export interface ParsedTaskLine {
-  /** The list prefix, e.g. "- [ ] ", including its trailing space. */
+  /** The list prefix, e.g. "- [ ] " or "- ", including its trailing space. */
   prefix: string;
-  checked: boolean;
+  /**
+   * Nothing left to start. A box says so by holding `x`, `X` or `-`; a plain
+   * item says so by being struck through — and where there IS a box, the box
+   * decides and a strike is just the user's words.
+   */
+  done: boolean;
   /** Offset of the marker within the line, or -1 when the line carries none. */
   markerStart: number;
   /** Offset one past the marker, or -1. */
@@ -217,23 +289,46 @@ export interface ParsedTaskLine {
    * and clearing it would delete the date the user typed.
    */
   rawTitle: string;
-  /** The single character inside the box, exactly as written. */
-  box: string;
+  /** The single character inside the box, exactly as written; null on a plain
+   *  list item, which has no box. */
+  box: string | null;
 }
 
-/** Null when the line is not a task list item at all. */
+/** Null when the line is not a list item at all. */
 export function parseTaskLine(text: string): ParsedTaskLine | null {
   const m = TASK_LINE_RE.exec(text);
   if (!m) return null;
   const prefix = m[1];
-  const box = m[2];
-  const checked = DONE_BOXES.has(box);
+  const box = m[2] ?? null;
   const markerStart = text.indexOf(MARKER);
   const markerEnd = markerStart < 0 ? -1 : markerStart + MARKER.length;
   const beforeMarker = markerStart < 0 ? text : text.slice(0, markerStart);
   const titleEnd = beforeMarker.replace(/\s+$/, "").length;
   const rawTitle = text.slice(prefix.length, markerStart < 0 ? text.length : markerStart).trim();
-  return { prefix, box, checked, markerStart, markerEnd, titleEnd, title: stripMetadata(rawTitle), rawTitle };
+  const { title, struck } = readTitle(rawTitle, box !== null);
+  const done = box !== null ? DONE_BOXES.has(box) : struck;
+  return { prefix, box, done, markerStart, markerEnd, titleEnd, title, rawTitle };
+}
+
+/**
+ * The words of a line, and whether a strike round them made it a done one.
+ *
+ * On a plain item the strike is read TWICE round the metadata strip, because a
+ * hand crosses an item out in two places: round everything (`~~Write it
+ * [due:: Friday]~~`, which is what `markDone` writes), or round the words
+ * alone with the annotation left standing (`~~Write it~~ [due:: Friday]`). The
+ * first is read off the raw title before the annotations go, or the closing
+ * tildes would sit behind an annotation the trailing strip is anchored to; the
+ * second off what is left once they have. A boxed line is never unstruck: its
+ * box decides, and tildes there are the user's own words.
+ */
+function readTitle(rawTitle: string, boxed: boolean): { title: string; struck: boolean } {
+  if (boxed) return { title: stripMetadata(rawTitle), struck: false };
+  const whole = unstrike(rawTitle);
+  if (whole !== null) return { title: stripMetadata(whole), struck: true };
+  const stripped = stripMetadata(rawTitle);
+  const words = unstrike(stripped);
+  return words !== null ? { title: words, struck: true } : { title: stripped, struck: false };
 }
 
 /**
@@ -246,22 +341,25 @@ export function parseTaskLine(text: string): ParsedTaskLine | null {
  */
 export function markerRange(parsed: ParsedTaskLine, text: string): { from: number; to: number } | null {
   if (parsed.markerStart < 0) return null;
-  const eatsSpace = parsed.checked && parsed.markerStart > 0 && text[parsed.markerStart - 1] === " ";
+  const eatsSpace = parsed.done && parsed.markerStart > 0 && text[parsed.markerStart - 1] === " ";
   return { from: parsed.markerStart - (eatsSpace ? 1 : 0), to: parsed.markerEnd };
 }
 
 /**
- * Ticking the box on the task these words name, in a whole note.
+ * Ticking the box on the task these words name, in a whole note — or, on a
+ * plain list item, striking its words through, which is the one mark such an
+ * item has for done (Anton, 2026-09-07).
  *
  * Returns the new text, or null when there was nothing to do — which is what
  * makes applying a completion idempotent: a row goes on saying `completed` for
- * as long as it is read, and a line that is already ticked no longer parses as
- * unchecked.
+ * as long as it is read, and a line that is already done no longer parses as
+ * open.
  *
  * Matched by the task's own WORDS and by the marker, never by line number: notes
  * get edited and reordered between a task starting and finishing. Only the box
- * changes — the marker stays exactly where the user put it, since deleting it
- * would be the plugin editing their words, and a done task hides it anyway.
+ * (or the strike) changes — the marker stays exactly where the user put it,
+ * since deleting it would be the plugin editing their words, and a done task
+ * hides it anyway.
  *
  * The FIRST match wins. Two identical task lines in one note are the same task
  * as far as anything here can tell, so ticking either is the same answer.
@@ -288,9 +386,13 @@ export type TasksToggle = (line: string) => string;
  * Without Tasks in the vault this is the box and nothing else. With it, Tasks
  * answers instead so a `🔁` line gets its next occurrence. Its completion date
  * is removed before the note is written, keeping main's checkbox-only UI.
+ *
+ * A PLAIN item is never handed to Tasks: Tasks reads checkboxes and nothing
+ * else, so there is no recurrence to keep, and what marks it done is the
+ * strike `markDone` writes.
  */
 function tickOne(line: string, toggle?: TasksToggle): string[] {
-  if (!toggle) return [setBox(line, "x")];
+  if (!toggle || parseTaskLine(line)?.box === null) return [markDone(line)];
   const { body, tail } = detachTrailingMarker(line);
   const out = toggle(body).split("\n").map(stripTasksCompletionDate);
   // Every line Tasks hands back gets the marker: the NEW occurrence needs one to
@@ -342,7 +444,7 @@ export function findTaskLine(lines: string[], title: string): number {
   if (!wanted) return -1;
   for (let i = 0; i < lines.length; i++) {
     const parsed = parseTaskLine(lines[i]);
-    if (!parsed || parsed.checked || parsed.markerStart < 0) continue;
+    if (!parsed || parsed.done || parsed.markerStart < 0) continue;
     if (parsed.title === wanted) return i;
   }
   return -1;
@@ -388,11 +490,12 @@ function fnv1a(s: string): string {
 }
 
 /**
- * Which marked tasks were TICKED between two versions of the same lines.
+ * Which marked tasks were TICKED between two versions of the same lines — or,
+ * on a plain item, struck through, which is the tick such an item has.
  *
  * Ticking the box by hand completes the task in Happy Squid (Anton,
  * 2026-09-02), and this is how a tick is told apart from a box that was
- * already ticked: a line that is open in `before` and ticked in `after`, with
+ * already ticked: a line that is open in `before` and done in `after`, with
  * the same words and the marker on both. A state alone cannot say it — a note
  * may hold a finished copy of a task next to the one running, and the first
  * keystroke anywhere in it would then read as ticking the finished copy off —
@@ -403,19 +506,32 @@ function fnv1a(s: string): string {
  * changed in the same edit are not a tick of either wording, since no click
  * does both. Deduplicated, so two identical lines ticked at once — the same
  * task as far as anything here can tell — name it once.
+ *
+ * A strike is compared through `strikeKey`, because it is typed rather than
+ * clicked: the closing tildes land one keystroke at a time, so the line the
+ * last one lands on was `~~Write it~` a moment before — open, and titled with
+ * its half-typed tildes. The words with the tildes taken off either end are
+ * what the two versions have in common. The toggle-strikethrough command and
+ * the plugin's own completion write both ends in one change and never needed
+ * it; a box is unaffected, its title having no tildes to take off.
  */
 export function tickedTitles(before: string[], after: string[]): string[] {
   const open = new Set<string>();
   for (const line of before) {
     const parsed = parseTaskLine(line);
-    if (parsed && !parsed.checked && parsed.markerStart >= 0 && parsed.title) open.add(parsed.title);
+    if (parsed && !parsed.done && parsed.markerStart >= 0 && parsed.title) open.add(strikeKey(parsed.title));
   }
   if (open.size === 0) return [];
   const ticked: string[] = [];
   for (const line of after) {
     const parsed = parseTaskLine(line);
-    if (!parsed || !parsed.checked || parsed.markerStart < 0) continue;
-    if (open.delete(parsed.title)) ticked.push(parsed.title);
+    if (!parsed || !parsed.done || parsed.markerStart < 0) continue;
+    if (open.delete(strikeKey(parsed.title))) ticked.push(parsed.title);
   }
   return ticked;
+}
+
+/** A title with any strike syntax at its ends ignored, complete or half typed. */
+function strikeKey(title: string): string {
+  return title.replace(/^~+|~+$/g, "").trim();
 }

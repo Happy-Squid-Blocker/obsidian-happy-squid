@@ -147,10 +147,12 @@ function buildDecorations(view: EditorView, onStart: PressHandler, states: TaskS
           builder.add(
             start,
             end,
-            parsed.checked
+            parsed.done
               ? // A finished task has nothing to start. Hidden outright, because
                 // leaving the raw text is worse than either alternative: Obsidian
-                // strikes it through with the rest of the line.
+                // strikes it through with the rest of the line — a ticked box's
+                // line by its own rule, a plain item's by the very tildes that
+                // made it done.
                 Decoration.replace({})
               : Decoration.replace({
                   widget: new StartTaskWidget(parsed.title, faceFor(states, parsed.title), onStart),
@@ -229,6 +231,13 @@ class FaceChild extends MarkdownRenderChild {
  * its own pass. A plugin that only does the editor works where the author is
  * not looking and reads as broken.
  *
+ * Every list item, boxed or plain — a plain item being a task since 2026-09-07
+ * — and each is read by putting its rendered content back into the SOURCE
+ * shape `parseTaskLine` knows (`inlineSource`), so reading view and the editor
+ * answer "done" and "title" out of one parser: the box's own character in
+ * front, and a `<del>` element turned back into the `~~` that made it, which
+ * is the one piece of markup that decides anything here.
+ *
  * The CHECKBOX is answered here too. Reading view is not an editor, so a tick
  * there is no document change for `tickWatch` (tick-watch.ts) to see — it is
  * Obsidian's own handler on the box writing the file — so the box itself is
@@ -240,7 +249,9 @@ class FaceChild extends MarkdownRenderChild {
  * had just un-ticked and ticked again — MEASURED 2026-09-02, the second click
  * filed nothing. `checked` already holds what the click is moving the box TO
  * while the event runs, before Obsidian's delegated handler prevents the
- * default, so a click on a done box reads false and files nothing.
+ * default, so a click on a done box reads false and files nothing. A plain
+ * item has no box and reading view is not editable, so it has no tick here;
+ * striking it through is an edit, and the editor's watcher sees that.
  */
 export function decorateReadingView(
   el: HTMLElement,
@@ -249,7 +260,7 @@ export function decorateReadingView(
   states: TaskStates,
   ctx: MarkdownPostProcessorContext,
 ): void {
-  for (const li of Array.from(el.querySelectorAll("li.task-list-item"))) {
+  for (const li of Array.from(el.querySelectorAll("li"))) {
     // The box's OWN character, not a two-way guess off it.
     //
     // `data-task` carries whatever Obsidian read out of the line, and for an
@@ -259,8 +270,9 @@ export function decorateReadingView(
     // controls drawn, which is not a rendering quirk but this one comparison.
     // A Tasks in-progress `[/]` failed the same test for the same reason.
     const raw = li.getAttribute("data-task");
-    const parsed = parseTaskLine(`- [${raw && raw.length === 1 ? raw : " "}] ${li.textContent ?? ""}`);
-    const done = parsed?.checked ?? false;
+    const boxed = li.classList.contains("task-list-item");
+    const parsed = parseTaskLine(`- ${boxed ? `[${raw && raw.length === 1 ? raw : " "}] ` : ""}${inlineSource(li)}`);
+    const done = parsed?.done ?? false;
     const title = parsed?.title ?? "";
     // The item's OWN box — `:scope >` so a nested list's boxes are their own
     // items', and through the `<p>` a loose list wraps its items in — and only
@@ -274,13 +286,7 @@ export function decorateReadingView(
         if (box.checked) onTick(title, ctx.sourcePath);
       });
     }
-    const walker = document.createTreeWalker(li, NodeFilter.SHOW_TEXT);
-    const hits: Text[] = [];
-    let node = walker.nextNode();
-    while (node) {
-      if (node.nodeValue && node.nodeValue.includes("{task}")) hits.push(node as Text);
-      node = walker.nextNode();
-    }
+    const hits = ownTextNodes(li).filter((node) => node.nodeValue?.includes("{task}"));
     for (const textNode of hits) {
       const frag = createFragment();
       const children: FaceChild[] = [];
@@ -303,4 +309,51 @@ export function decorateReadingView(
       for (const child of children) ctx.addChild(child);
     }
   }
+}
+
+/**
+ * The text nodes that belong to THIS item — through the `<p>` a loose list
+ * wraps it in, and never into a nested list, whose items are their own.
+ *
+ * A walk over the whole `<li>` used to take the nested items' text too, so a
+ * marker on a child was replaced by the PARENT's pass with a control bound to
+ * the parent's title, and the child's own pass then found nothing left to
+ * draw. The node's nearest `<li>` says whose it is.
+ */
+function ownTextNodes(li: Element): Text[] {
+  const walker = document.createTreeWalker(li, NodeFilter.SHOW_TEXT);
+  const out: Text[] = [];
+  let node = walker.nextNode();
+  while (node) {
+    if (node.parentElement?.closest("li") === li) out.push(node as Text);
+    node = walker.nextNode();
+  }
+  return out;
+}
+
+/**
+ * An item's rendered content put back into the shape of the line it was
+ * rendered from, as far as this pass needs it: its own text (never a nested
+ * list's), with a strikethrough element turned back into the `~~` it came
+ * from. Every other inline element stands as its text, exactly as
+ * `li.textContent` always read it here — bold, links and code lose their
+ * syntax in this view as they did before, and only the strike is
+ * load-bearing, being what makes a plain item done.
+ */
+function inlineSource(li: Element): string {
+  let out = "";
+  const walk = (node: Node): void => {
+    for (const child of Array.from(node.childNodes)) {
+      if (child.nodeType === Node.TEXT_NODE) out += child.nodeValue ?? "";
+      else if (child.nodeType !== Node.ELEMENT_NODE) continue;
+      else {
+        const tag = (child as Element).tagName;
+        if (tag === "UL" || tag === "OL") continue;
+        if (tag === "DEL" || tag === "S") out += `~~${child.textContent ?? ""}~~`;
+        else walk(child);
+      }
+    }
+  };
+  walk(li);
+  return out;
 }

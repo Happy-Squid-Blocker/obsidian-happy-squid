@@ -1,4 +1,4 @@
-import { formatGoalMinutes, formatMinutesSpaced } from "./vendor/format";
+import { formatDuration } from "./vendor/format";
 import { parseTimeToHour12 } from "./vendor/hour12";
 import { dayKey, dayKeyStart } from "./vendor/day-key";
 
@@ -28,19 +28,9 @@ import { dayKey, dayKeyStart } from "./vendor/day-key";
  * a day nobody recorded has no card, and no amount of care invents one: the
  * marker stays as the raw text the user typed.
  *
- * Importless past a few leaves, exactly as task-line.ts and note-context.ts are,
- * so `src/tests/obsidian/goal.test.ts` can hold it and it runs in the repo's
- * `npm run check` rather than behind a second test runner. Every import here is
- * a SPELLING and each one is deliberate: `formatGoalMinutes` and
- * `formatMinutesSpaced` from `src/shared/format.ts`, `parseTimeToHour12` from
- * `src/view/shared/hour12.ts`. Both files import nothing at all, so neither
- * drags any of the extension's graph in, and each function is the single place
- * its figure is spelled anywhere in the product — a goal ("every surface that
- * prints a goal figure goes through this, browser and phones alike, so none of
- * them can drift into days on their own"), a spendable budget, a time of day. A
- * further surface copying any of those rules would be exactly that drift, and
- * that pair of conditions — importless, and the one place the product already
- * spells this — is the whole test for adding another.
+ * Shared formatting and calendar helpers keep these pure projections in the
+ * extension's test suite without importing Obsidian or CodeMirror. Durations
+ * use formatDuration everywhere, including work totals and Free Time.
  */
 
 export type GoalPeriod = "day" | "week";
@@ -151,8 +141,8 @@ export function goalText(goal: GoalValue | null): GoalText {
   // its title line and the stack centres what is left.
   if (goal === null) return { title: "", progress: GOAL_DISABLED, streakLabel: "" };
   const loggedMinutes = goal.loggedMs / MS_PER_MINUTE;
-  const logged = formatGoalMinutes(loggedMinutes);
-  const left = formatGoalMinutes(Math.max(0, goal.minutes - loggedMinutes));
+  const logged = formatDuration(loggedMinutes);
+  const left = formatDuration(Math.max(0, goal.minutes - loggedMinutes));
   return {
     title: goal.period === "week" ? "Weekly Task Goal" : "Daily Task Goal",
     progress: `${logged} logged · ${left} left`,
@@ -459,12 +449,12 @@ export function dayIsRecorded(params: {
   return signedIn && date === dayKey(now);
 }
 
-/** The day's task work as the product spells it everywhere else — "1h 13m",
- *  "47m", "0m". `formatGoalMinutes` is the single place a task figure is
+/** The day's task work as the product spells it everywhere else — "1h",
+ *  "47m", "0m". `formatDuration` is the single place a task figure is
  *  spelled, browser and phones alike, so this marker cannot drift into its own
  *  wording. */
 export function taskTimeText(loggedMs: number): string {
-  return formatGoalMinutes(loggedMs / MS_PER_MINUTE);
+  return formatDuration(loggedMs / MS_PER_MINUTE);
 }
 
 /**
@@ -646,15 +636,15 @@ export interface TaskRowText {
  * two ways, which is worth writing down rather than quietly fixing — the card is
  * a list of stamps in a column and the other is a sentence's worth of one time.
  *
- * Everything else is the product's own spelling. `formatGoalMinutes` is the
- * single place a task figure is spelled anywhere, so a row reads "1h 17m" beside
- * a header reading "4h 17m logged" with no chance of drift. The word is "worked"
+ * Everything else is the product's own spelling. `formatDuration` is the
+ * single place a task figure is spelled anywhere, so a row reads "1h" beside
+ * a header reading "4h logged" with no chance of drift. The word is "worked"
  * where the header says "logged", which is the design's, and the separator is
  * the same middle dot the header already uses — so "cancelled" arrives as one
  * more term in a list rather than as a new kind of thing.
  */
 export function taskRowText(task: SnapshotTask): TaskRowText {
-  const worked = formatGoalMinutes(task.workedMs / MS_PER_MINUTE);
+  const worked = formatDuration(task.workedMs / MS_PER_MINUTE);
   const blocks = blocksLabel(task.timesBlocked);
   return {
     time: task.startedAt,
@@ -738,13 +728,9 @@ export function timesBlockedText(count: number): string {
   return `${Math.max(0, Math.round(count))}`;
 }
 
-/** Free Time spent, as the product spells a Free Time figure everywhere else —
- *  "25m", "1h 19m", "0m". `formatMinutesSpaced` and NOT `formatGoalMinutes`
- *  beside it: a goal is a number of hours worked and collapses to hours however
- *  large, a spendable budget is what this is, and every pill, popup and
- *  menu-bar countdown that prints one already goes through that function. */
+/** Free Time spent, using the shared rounded duration readout. */
 export function freeTimeText(freeTimeMs: number): string {
-  return formatMinutesSpaced(freeTimeMs / MS_PER_MINUTE);
+  return formatDuration(freeTimeMs / MS_PER_MINUTE);
 }
 
 /**
@@ -885,12 +871,8 @@ export function daySummaryForDay(params: {
 /**
  * The header's terms — three of them, or fewer once the panel has hidden some.
  *
- * Every figure in them is spelled by the function the rest of the product spells
- * that figure with, and the three do not agree with each other on purpose:
- * `formatGoalMinutes` for task work (which collapses to hours however large) and
- * `formatMinutesSpaced` for a spendable budget, exactly as `{tasktime}` and
- * `{freetime}` already differ. The separator the card puts between them is the
- * middle dot the Task Goal card's own progress line and task rows already use.
+ * Task work and Free Time use the shared rounded duration readout. The middle
+ * dot is the same separator as the Task Goal card's progress line and rows.
  *
  * The words are the design's ("tasks", "free time", the block count), and
  * "tasks" does not pluralise because it is not a count — "3h 17m tasks" is an
@@ -906,8 +888,8 @@ function daySummaryStats(
   visible: DaySummaryVisibility,
 ): string[] {
   const stats: string[] = [];
-  if (visible.taskTime) stats.push(`${formatGoalMinutes(day.loggedMs / MS_PER_MINUTE)} tasks`);
-  if (visible.freeTime) stats.push(`${formatMinutesSpaced(day.freeTimeMs / MS_PER_MINUTE)} free time`);
+  if (visible.taskTime) stats.push(`${formatDuration(day.loggedMs / MS_PER_MINUTE)} tasks`);
+  if (visible.freeTime) stats.push(`${formatDuration(day.freeTimeMs / MS_PER_MINUTE)} free time`);
   if (visible.timesBlocked) stats.push(blocksLabel(day.timesBlocked));
   return stats;
 }

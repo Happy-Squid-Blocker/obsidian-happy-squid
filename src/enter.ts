@@ -1,6 +1,6 @@
 import { type EditorView, keymap } from "@codemirror/view";
 import { type Extension, Prec } from "@codemirror/state";
-import { MARKER, parseTaskLine } from "./task-line";
+import { MARKER, nextPrefix, parseTaskLine } from "./task-line";
 
 /**
  * Carrying the marker onto the next task.
@@ -58,11 +58,16 @@ export function enterPropagation(): Extension {
           // (1) A genuine split inside the title is still Obsidian's.
           if (range.head < line.from + parsed.titleEnd) return false;
 
+          // The box OPEN and a number counted up (`nextPrefix`): a marker carried
+          // off a done task used to land on a `- [x]` of its own, a done task
+          // with no words, and off `3.` on a second `3.`. A plain item's prefix
+          // is its bullet alone, so the next task is a plain item too.
+          const prefix = nextPrefix(parsed.prefix);
           view.dispatch({
             // The space keeps the next title off the marker: the caret lands at
             // the prefix end, so what gets typed goes in BEFORE it.
-            changes: { from: line.to, to: line.to, insert: `\n${parsed.prefix} ${MARKER}` },
-            selection: { anchor: line.to + 1 + parsed.prefix.length },
+            changes: { from: line.to, to: line.to, insert: `\n${prefix} ${MARKER}` },
+            selection: { anchor: line.to + 1 + prefix.length },
             scrollIntoView: true,
             userEvent: "input",
           });
