@@ -1,10 +1,11 @@
-import { MS_PER_MINUTE } from "./constants";
-
+// This file imports nothing. Obsidian copies it and Raycast exports selected
+// declarations into standalone extensions without the app's constants or model.
+const MS_PER_MINUTE = 60_000;
 const MINUTES_PER_HOUR = 60;
 const HOURS_PER_DAY = 24;
 const MINUTES_PER_DAY = MINUTES_PER_HOUR * HOURS_PER_DAY;
 
-/** One rounded unit for every duration readout. Each unit is rounded directly
+/** One rounded unit for compact duration readouts. Each unit is rounded directly
  * from the original minutes, including when carrying 60m to 1h or 24h to 1d.
  * Positive durations always show at least 1m; zero and expired values show 0m. */
 export function formatDuration(minutes: number): string {
@@ -15,9 +16,43 @@ export function formatDuration(minutes: number): string {
   return roundedMinutes >= MINUTES_PER_HOUR ? `${hours}h` : `${roundedMinutes}m`;
 }
 
+/** Hours and minutes for every task figure (countdowns, time worked, the menu
+ * bar) and for task-goal progress. Omits zero units, keeps totals in hours, and
+ * clamps at 0m, with the same nearest-minute rounding and 1m floor as
+ * formatDuration. */
+export function formatHoursMinutes(minutes: number): string {
+  if (minutes <= 0) return "0m";
+  const roundedMinutes = Math.max(1, Math.round(minutes));
+  const hours = Math.floor(roundedMinutes / MINUTES_PER_HOUR);
+  const remainingMinutes = roundedMinutes % MINUTES_PER_HOUR;
+  if (hours === 0) return `${remainingMinutes}m`;
+  return remainingMinutes === 0 ? `${hours}h` : `${hours}h ${remainingMinutes}m`;
+}
+
+/** Days, hours and minutes, each unit present only when it is not zero: the
+ * countdown the pops behind a padlock another lock holds print under "for
+ * another:" ("1d 15h 17m", Anton's frame of 2026-09-25), where a single rounded
+ * unit would read "2d" under a task title counting "1h 17m left". Same
+ * nearest-minute rounding and 1m floor as formatHoursMinutes. */
+export function formatDaysHoursMinutes(minutes: number): string {
+  if (minutes <= 0) return "0m";
+  const rounded = Math.max(1, Math.round(minutes));
+  const days = Math.floor(rounded / MINUTES_PER_DAY);
+  const hours = Math.floor((rounded % MINUTES_PER_DAY) / MINUTES_PER_HOUR);
+  const mins = rounded % MINUTES_PER_HOUR;
+  return [days && `${days}d`, hours && `${hours}h`, mins && `${mins}m`].filter(Boolean).join(" ");
+}
+
 /** A deadline uses the same rounding as budgets, elapsed time and work totals. */
 export function formatMsRemaining(until: number, now: number): string {
   return formatDuration((until - now) / MS_PER_MINUTE);
+}
+
+/** A deadline exact in days, hours and minutes: what every extend dialog prints
+ * under "currently locked for" (Anton, 2026-11-02), where one rounded unit read
+ * "3h" for a lock with 2h 37m left. */
+export function formatMsRemainingExact(until: number, now: number): string {
+  return formatDaysHoursMinutes((until - now) / MS_PER_MINUTE);
 }
 
 /** Category labels are stored lowercase, for example "shopping" or "adult

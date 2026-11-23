@@ -192,7 +192,7 @@ export default class HappySquidPlugin extends Plugin {
     // Live Preview, reading view and source mode alike.
     this.addCommand({
       id: "start-task-under-cursor",
-      name: "Start or stop task at caret",
+      name: "Start or stop task at cursor",
       editorCheckCallback: (checking, editor) => {
         const title = titleOf(editor.getLine(editor.getCursor().line));
         if (!title) return false;
@@ -255,6 +255,11 @@ export default class HappySquidPlugin extends Plugin {
     const goals = absorbGoalDays(this.data.goals, this.states.goalDays);
     if (goals !== this.data.goals) {
       this.data.goals = goals;
+      // Every marker but the goal card's live figure reads this archive, and
+      // `refresh` above only redraws when the TASK side moved. Without this a
+      // note drew the archive it was opened with: "no button unlock" and zeros
+      // all morning, until a task started or the note was re-rendered.
+      this.states.redraw();
       await this.saveData(this.data);
     }
     for (const done of this.states.completed) {

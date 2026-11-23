@@ -10,7 +10,7 @@ import { isSuccessfulResponse } from "./request";
  * `task_intents` grants a client `select` and `update` on its own rows and
  * nothing else, so the insert is the Edge Function's. That split is the whole
  * design and it is the backend's, not ours — writing `activeTask` straight into
- * `user_state` would look like it worked while skipping the productivity
+ * `sync_records` would look like it worked while skipping the productivity
  * verdict, the refusal when a task is already running, the teardown of the
  * unblock sessions a task start performs, and the history row. See the comment
  * on supabase/migrations/20260826120000_todoist_integration.sql.

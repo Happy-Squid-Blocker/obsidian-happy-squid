@@ -8,7 +8,7 @@ import type { Auth } from "./auth";
  * moves for up to thirty seconds, because the marker cannot change until a
  * device has claimed the intent, dispatched it and the verdict has landed — and
  * the plugin only looked on its own timer. The answer is not to poll harder but
- * to be told, which both tables already support: `user_state` and `task_intents`
+ * to be told, which both tables already support: `sync_heads` and `task_intents`
  * are in the `supabase_realtime` publication (see docs/DATABASE.md), and Obsidian
  * is a long-lived app that can hold a socket the extension's service worker
  * cannot.
@@ -34,10 +34,18 @@ export class Live {
     const session = await this.auth.session();
     if (!session) return;
     const uid = session.user.id;
+    // The account's head row moves with every synced write.
     this.channel = this.auth.client
       .channel(`hs-obsidian-${uid}`)
-      .on("postgres_changes", { event: "*", schema: "public", table: "user_state", filter: `user_id=eq.${uid}` }, () =>
-        this.onChange(),
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "sync_heads", filter: `user_id=eq.${uid}` },
+        () => this.onChange(),
+      )
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "sync_heads", filter: `user_id=eq.${uid}` },
+        () => this.onChange(),
       )
       .on(
         "postgres_changes",

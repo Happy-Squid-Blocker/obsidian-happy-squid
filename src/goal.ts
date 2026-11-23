@@ -1,4 +1,4 @@
-import { formatDuration } from "./vendor/format";
+import { formatDuration, formatHoursMinutes } from "./vendor/format";
 import { parseTimeToHour12 } from "./vendor/hour12";
 import { dayKey, dayKeyStart } from "./vendor/day-key";
 
@@ -30,12 +30,13 @@ import { dayKey, dayKeyStart } from "./vendor/day-key";
  *
  * Shared formatting and calendar helpers keep these pure projections in the
  * extension's test suite without importing Obsidian or CodeMirror. Durations
- * use formatDuration everywhere, including work totals and Free Time.
+ * use formatHoursMinutes for goal progress and every task figure, and
+ * formatDuration for Free Time.
  */
 
 export type GoalPeriod = "day" | "week";
 
-/** `model.taskGoal`, as it comes off the `user_state` row. The Model's own type
+/** `model.taskGoal`, as it comes off the synced record. The Model's own type
  *  carries no more than this. */
 export interface GoalValue {
   period: GoalPeriod;
@@ -141,8 +142,8 @@ export function goalText(goal: GoalValue | null): GoalText {
   // its title line and the stack centres what is left.
   if (goal === null) return { title: "", progress: GOAL_DISABLED, streakLabel: "" };
   const loggedMinutes = goal.loggedMs / MS_PER_MINUTE;
-  const logged = formatDuration(loggedMinutes);
-  const left = formatDuration(Math.max(0, goal.minutes - loggedMinutes));
+  const logged = formatHoursMinutes(loggedMinutes);
+  const left = formatHoursMinutes(goal.minutes - loggedMinutes);
   return {
     title: goal.period === "week" ? "Weekly Task Goal" : "Daily Task Goal",
     progress: `${logged} logged · ${left} left`,
@@ -209,8 +210,9 @@ export interface GoalSnapshot {
    */
   morningUnlockTime?: string;
   /**
-   * The tasks that ENDED on this day, oldest first — the rows the card lists
-   * when it is expanded. The account's `TaskDay.tasks`.
+   * The ended tasks worked on this day, oldest first — the rows the card lists
+   * when it is expanded. The account's `TaskDay.tasks`, so a task that ran past
+   * midnight is a row on each day, carrying that day's part of the work.
    *
    * The one field here that is a LIST rather than a figure, and the only one no
    * marker of its own prints: it is what the `{taskgoal}` card's chevron opens.
@@ -449,12 +451,12 @@ export function dayIsRecorded(params: {
   return signedIn && date === dayKey(now);
 }
 
-/** The day's task work as the product spells it everywhere else — "1h",
- *  "47m", "0m". `formatDuration` is the single place a task figure is
- *  spelled, browser and phones alike, so this marker cannot drift into its own
- *  wording. */
+/** The day's task work as the product spells it everywhere else — "1h 13m",
+ *  "1h", "47m", "0m". `formatHoursMinutes` is the single place a task figure is
+ *  spelled, browser, desktop and phones alike, so this marker cannot drift into
+ *  its own wording. */
 export function taskTimeText(loggedMs: number): string {
-  return formatDuration(loggedMs / MS_PER_MINUTE);
+  return formatHoursMinutes(loggedMs / MS_PER_MINUTE);
 }
 
 /**
@@ -547,7 +549,7 @@ export function tasksForDay(params: { snapshots: GoalSnapshots; date: string }):
  * vault's archive — with anything that is not a whole row dropped.
  *
  * Lives here rather than beside either reader because BOTH need it and the two
- * must not drift: `state.ts` validates what arrives from `user_state` and
+ * must not drift: `state.ts` validates what arrives from `sync_records` and
  * `store.ts` validates what comes back off disk a year later, and a row that one
  * accepted and the other refused would be a card that changed when the account's
  * eight-day window rolled past it.
@@ -595,7 +597,7 @@ export function readSnapshotTasks(value: unknown): { tasks?: SnapshotTask[] } {
 /**
  * `{ summary }` for a readable one, `{}` for anything else — the guard both
  * stores share, beside `readSnapshotTasks` and for its reason: `state.ts`
- * validates what arrives from `user_state` and `store.ts` validates what comes
+ * validates what arrives from `sync_records` and `store.ts` validates what comes
  * back off disk a year later, and a value one accepted and the other refused
  * would be a card that changed when the account's eight-day window rolled past
  * it.
@@ -636,15 +638,15 @@ export interface TaskRowText {
  * two ways, which is worth writing down rather than quietly fixing — the card is
  * a list of stamps in a column and the other is a sentence's worth of one time.
  *
- * Everything else is the product's own spelling. `formatDuration` is the
- * single place a task figure is spelled anywhere, so a row reads "1h" beside
- * a header reading "4h logged" with no chance of drift. The word is "worked"
+ * Everything else is the product's own spelling. `formatHoursMinutes` is the
+ * single place a task figure is spelled anywhere, so a row reads "1h 12m" beside
+ * a header reading "3h 17m logged" with no chance of drift. The word is "worked"
  * where the header says "logged", which is the design's, and the separator is
  * the same middle dot the header already uses — so "cancelled" arrives as one
  * more term in a list rather than as a new kind of thing.
  */
 export function taskRowText(task: SnapshotTask): TaskRowText {
-  const worked = formatDuration(task.workedMs / MS_PER_MINUTE);
+  const worked = formatHoursMinutes(task.workedMs / MS_PER_MINUTE);
   const blocks = blocksLabel(task.timesBlocked);
   return {
     time: task.startedAt,
@@ -871,8 +873,9 @@ export function daySummaryForDay(params: {
 /**
  * The header's terms — three of them, or fewer once the panel has hidden some.
  *
- * Task work and Free Time use the shared rounded duration readout. The middle
- * dot is the same separator as the Task Goal card's progress line and rows.
+ * Task work is spelled in hours and minutes, as every task figure is, and Free
+ * Time in the shared one-unit readout. The middle dot is the same separator as
+ * the Task Goal card's progress line and rows.
  *
  * The words are the design's ("tasks", "free time", the block count), and
  * "tasks" does not pluralise because it is not a count — "3h 17m tasks" is an
@@ -888,7 +891,7 @@ function daySummaryStats(
   visible: DaySummaryVisibility,
 ): string[] {
   const stats: string[] = [];
-  if (visible.taskTime) stats.push(`${formatDuration(day.loggedMs / MS_PER_MINUTE)} tasks`);
+  if (visible.taskTime) stats.push(`${formatHoursMinutes(day.loggedMs / MS_PER_MINUTE)} tasks`);
   if (visible.freeTime) stats.push(`${formatDuration(day.freeTimeMs / MS_PER_MINUTE)} free time`);
   if (visible.timesBlocked) stats.push(blocksLabel(day.timesBlocked));
   return stats;

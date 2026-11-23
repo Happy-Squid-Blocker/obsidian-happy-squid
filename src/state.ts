@@ -4,6 +4,7 @@ import { readSnapshotSummary, readSnapshotTasks, type GoalSnapshot, type GoalVal
 import { type HttpRequest, isSuccessfulResponse } from "./request";
 import { notePathOf, taskIdFor } from "./task-line";
 import { dayKeyStart } from "./vendor/day-key";
+import { isActiveTaskLive, liveTaskSlots, type SlotHistoryEntry, type SlotTask } from "./task-slots";
 
 /**
  * What the marker in a note should SAY, read back from the account.
@@ -220,6 +221,29 @@ export class TaskStates {
     return null;
   }
 
+  /** The task the slots show, with the end markers of their tasks read from
+   *  the account. Undefined when that read failed. */
+  private async liveTask(
+    rows: TaskSlotRow[],
+    headers: Record<string, string>,
+  ): Promise<ActiveTaskRow | null | undefined> {
+    const copies = rows.map((row) => row.value);
+    if (copies.length === 0) return null;
+    const ids = copies.map((task) => `"task-end-${task.id}"`).join(",");
+    const ends = await this.request({
+      url: `${SUPABASE_URL}/rest/v1/sync_records?select=value&collection=eq.history&deleted=is.false&id=in.(${encodeURIComponent(ids)})`,
+      headers,
+      throw: false,
+    });
+    if (!isSuccessfulResponse(ends)) return undefined;
+    const history = (ends.json as { value: SlotHistoryEntry }[]).map((row) => row.value);
+    const task = liveTaskSlots(copies, { history }).activeTask;
+    // A task that ran out ended at its deadline, even before a device wrote
+    // its end. The plugin does not know the server's clock, so it reads the
+    // deadline on its own.
+    return isActiveTaskLive(task, Date.now()) ? task : null;
+  }
+
   async refresh(): Promise<void> {
     const session = await this.auth.session();
     if (!session) {
@@ -238,16 +262,18 @@ export class TaskStates {
     };
     try {
       const [taskRes, goalRes, refusedRes] = await Promise.all([
+        // One record per task. The records of tasks that are over
+        // stay for days beside the live one, so the live one is picked below
+        // the way every device picks it (liveTaskSlots).
         this.request({
-          url: `${SUPABASE_URL}/rest/v1/user_state?select=value&key=eq.activeTask`,
+          url: `${SUPABASE_URL}/rest/v1/sync_records?select=value&collection=eq.task&deleted=is.false`,
           headers,
           throw: false,
         }),
-        // The same table and the same shape, one row along. `taskGoal` is a
-        // synced Model key (src/shared/sync-keys.ts), so the goal a note draws
-        // is the account's own and needs nothing invented for it.
+        // The goal and the day records are synced records like the task, so the
+        // goal a note draws is the account's own (one record per day).
         this.request({
-          url: `${SUPABASE_URL}/rest/v1/user_state?select=key,value&key=in.(taskGoal,taskDays)`,
+          url: `${SUPABASE_URL}/rest/v1/sync_records?select=collection,value&collection=in.(taskGoal,taskDays)&value=not.is.null`,
           headers,
           throw: false,
         }),
@@ -264,16 +290,16 @@ export class TaskStates {
       // not cost the marker its face, and a goal that has never been set has no
       // row at all, which is a null and not an error.
       const goalRows = isSuccessfulResponse(goalRes) ? goalRes.json : [];
-      const goal = readGoal(rowValue(goalRows, "taskGoal"));
+      const goal = readGoal(recordValues(goalRows, "taskGoal")[0]);
       // The account's own record of ended days. Read here rather than derived
       // from the row above because it is the one thing the row CANNOT say: it
       // holds a single period and wipes it at every rollover, so a day the vault
       // was shut for exists only in this list.
-      this.goalDays = readGoalDays(rowValue(goalRows, "taskDays"));
+      this.goalDays = readGoalDays(recordValues(goalRows, "taskDays"));
       this.signedIn = true;
 
-      const active = taskRes.json as { value: ActiveTaskRow | null }[];
-      const task = active[0]?.value ?? null;
+      const task = await this.liveTask(taskRes.json as TaskSlotRow[], headers);
+      if (task === undefined) return;
       const title = task?.origin?.source === "obsidian" ? (task.origin.title ?? null) : null;
       const taskId = task?.origin?.source === "obsidian" ? (task.origin.taskId ?? null) : null;
       this.rewrite = rewriteOf(task);
@@ -431,6 +457,8 @@ type ActiveTaskRow = {
   origin?: { source?: string; title?: string; taskId?: string };
 };
 
+type TaskSlotRow = { value: SlotTask & ActiveTaskRow };
+
 /**
  * Whether the running task's words are the note's — null when they are, or
  * when there is no Obsidian task running at all. The test is the id: it was
@@ -449,7 +477,7 @@ function rewriteOf(task: ActiveTaskRow | null): TaskRewrite | null {
 }
 
 /**
- * `model.taskGoal` off its `user_state` row.
+ * `model.taskGoal` off its synced record.
  *
  * Validated field by field rather than cast, which the two rows above can get
  * away with and this one cannot: they feed a LABEL, and a malformed one draws
@@ -488,10 +516,12 @@ function sameGoal(a: GoalValue | null, b: GoalValue | null): boolean {
   );
 }
 
-/** One key's value out of a multi-key `user_state` read. */
-function rowValue(rows: unknown, key: string): unknown {
-  if (!Array.isArray(rows)) return undefined;
-  return (rows as { key?: string; value?: unknown }[]).find((r) => r.key === key)?.value;
+/** The values of one collection out of a multi-collection `sync_records` read. */
+function recordValues(rows: unknown, collection: string): unknown[] {
+  if (!Array.isArray(rows)) return [];
+  return (rows as { collection?: string; value?: unknown }[])
+    .filter((r) => r.collection === collection)
+    .map((r) => r.value);
 }
 
 /**

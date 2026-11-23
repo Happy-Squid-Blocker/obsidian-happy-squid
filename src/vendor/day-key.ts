@@ -26,8 +26,7 @@
  */
 
 /** The calendar date containing `ts`, as `YYYY-MM-DD` in local time. */
-export function dayKey(ts: number): string {
-  const d = new Date(ts);
+export function dayKey(ts: number, d = new Date(ts)): string {
   const month = `${d.getMonth() + 1}`.padStart(2, "0");
   const day = `${d.getDate()}`.padStart(2, "0");
   return `${d.getFullYear()}-${month}-${day}`;
@@ -49,8 +48,7 @@ export function dayKey(ts: number): string {
  * `view/shared/hour12.ts` is the single place either is turned into the 12-hour
  * clock every editor shows.
  */
-export function clockKey(ts: number): string {
-  const d = new Date(ts);
+export function clockKey(ts: number, d = new Date(ts)): string {
   return `${`${d.getHours()}`.padStart(2, "0")}:${`${d.getMinutes()}`.padStart(2, "0")}`;
 }
 
