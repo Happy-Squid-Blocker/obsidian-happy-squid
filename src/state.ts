@@ -5,6 +5,7 @@ import { type HttpRequest, isSuccessfulResponse } from "./request";
 import { notePathOf, taskIdFor } from "./task-line";
 import { dayKeyStart } from "./vendor/day-key";
 import { isActiveTaskLive, liveTaskSlots, type SlotHistoryEntry, type SlotTask } from "./task-slots";
+import { taskWorkedMs, type WorkTask } from "./task-work";
 
 /**
  * What the marker in a note should SAY, read back from the account.
@@ -131,6 +132,16 @@ export class TaskStates {
   goal: GoalValue | null = null;
 
   /**
+   * The running or paused task, whoever started it, for the work the day cards
+   * add to the account's figures until it ends (task-work.ts). Read at render
+   * time rather than here, because the work grows while nothing in the account
+   * moves.
+   */
+  work: WorkTask | null = null;
+  /** `workMinute` as the cards were last drawn with it. */
+  private drawnWorkMinute = "";
+
+  /**
    * The last eight ended days, straight off `model.taskGoalDays`.
    *
    * The RECOVERY layer: the account stamps a day as it ends on whichever device
@@ -222,13 +233,14 @@ export class TaskStates {
   }
 
   /** The task the slots show, with the end markers of their tasks read from
-   *  the account. Undefined when that read failed. */
+   *  the account: `task` while it runs, and `work` while it runs or is paused.
+   *  Undefined when that read failed. */
   private async liveTask(
     rows: TaskSlotRow[],
     headers: Record<string, string>,
-  ): Promise<ActiveTaskRow | null | undefined> {
+  ): Promise<{ task: TaskSlotRow["value"] | null; work: WorkTask | null } | undefined> {
     const copies = rows.map((row) => row.value);
-    if (copies.length === 0) return null;
+    if (copies.length === 0) return { task: null, work: null };
     const ids = copies.map((task) => `"task-end-${task.id}"`).join(",");
     const ends = await this.request({
       url: `${SUPABASE_URL}/rest/v1/sync_records?select=value&collection=eq.history&deleted=is.false&id=in.(${encodeURIComponent(ids)})`,
@@ -237,11 +249,14 @@ export class TaskStates {
     });
     if (!isSuccessfulResponse(ends)) return undefined;
     const history = (ends.json as { value: SlotHistoryEntry }[]).map((row) => row.value);
-    const task = liveTaskSlots(copies, { history }).activeTask;
+    const slots = liveTaskSlots(copies, { history });
     // A task that ran out ended at its deadline, even before a device wrote
     // its end. The plugin does not know the server's clock, so it reads the
     // deadline on its own.
-    return isActiveTaskLive(task, Date.now()) ? task : null;
+    const now = Date.now();
+    const task = isActiveTaskLive(slots.activeTask, now) ? slots.activeTask : null;
+    const work = task ?? (isActiveTaskLive(slots.pausedTask, now) ? slots.pausedTask : null);
+    return { task, work };
   }
 
   async refresh(): Promise<void> {
@@ -253,7 +268,7 @@ export class TaskStates {
       this.rewrite = null;
       // Nothing will ever answer a press signed out, so none is kept.
       const dropped = this.dropAllPending();
-      if (!this.apply(null, null, new Map(), null) && dropped) this.redraw();
+      if (!this.apply(null, null, new Map(), null, null) && dropped) this.redraw();
       return;
     }
     const headers = {
@@ -298,8 +313,9 @@ export class TaskStates {
       this.goalDays = readGoalDays(recordValues(goalRows, "taskDays"));
       this.signedIn = true;
 
-      const task = await this.liveTask(taskRes.json as TaskSlotRow[], headers);
-      if (task === undefined) return;
+      const live = await this.liveTask(taskRes.json as TaskSlotRow[], headers);
+      if (live === undefined) return;
+      const { task, work } = live;
       const title = task?.origin?.source === "obsidian" ? (task.origin.title ?? null) : null;
       const taskId = task?.origin?.source === "obsidian" ? (task.origin.taskId ?? null) : null;
       this.rewrite = rewriteOf(task);
@@ -324,7 +340,7 @@ export class TaskStates {
       // compared: a verdict word-for-word the same as the one already drawn
       // moves nothing in `apply`, and the press still has to end.
       const settled = this.settlePending(title, taskId, rows);
-      if (!this.apply(title, taskId, refused, goal) && settled) this.redraw();
+      if (!this.apply(title, taskId, refused, goal, work) && settled) this.redraw();
     } catch (e) {
       console.warn("[happy-squid] state refresh failed", e);
     }
@@ -426,7 +442,9 @@ export class TaskStates {
     taskId: string | null,
     refused: Map<string, { result: Refusal; detail: string }>,
     goal: GoalValue | null,
+    work: WorkTask | null,
   ): boolean {
+    const minute = workMinute(work, Date.now());
     const same =
       title === this.runningTitle &&
       taskId === this.runningTaskId &&
@@ -437,6 +455,10 @@ export class TaskStates {
       // figure it was drawn with. Compared by VALUE: the row is re-fetched every
       // poll, so identity would say "changed" twice a minute forever.
       sameGoal(goal, this.goal) &&
+      // The running task's worked minute too, for the same reason: its work is
+      // on the cards while nothing in the account moves, so a figure drawn once
+      // would stand still for the whole task.
+      minute === this.drawnWorkMinute &&
       refused.size === this.refused.size &&
       [...refused].every(([k, v]) => {
         const seen = this.refused.get(k);
@@ -447,6 +469,8 @@ export class TaskStates {
     this.runningTaskId = taskId;
     this.refused = refused;
     this.goal = goal;
+    this.work = work;
+    this.drawnWorkMinute = minute;
     this.redraw();
     return true;
   }
@@ -457,7 +481,14 @@ type ActiveTaskRow = {
   origin?: { source?: string; title?: string; taskId?: string };
 };
 
-type TaskSlotRow = { value: SlotTask & ActiveTaskRow };
+type TaskSlotRow = { value: SlotTask & ActiveTaskRow & WorkTask };
+
+/** The running task and the whole minutes it has worked, which is what the day
+ *  cards print of it. Holds still while it is paused. */
+function workMinute(work: WorkTask | null, now: number): string {
+  if (!work) return "";
+  return `${work.id}|${work.pausedAt ?? ""}|${Math.floor(taskWorkedMs(work, now) / 60_000)}`;
+}
 
 /**
  * Whether the running task's words are the note's — null when they are, or

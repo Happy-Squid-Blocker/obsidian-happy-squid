@@ -1,6 +1,7 @@
 import { formatDuration, formatHoursMinutes } from "./vendor/format";
 import { parseTimeToHour12 } from "./vendor/hour12";
 import { dayKey, dayKeyStart } from "./vendor/day-key";
+import type { RunningWork } from "./task-work";
 
 /**
  * The Task Goal as a NOTE asks for it, which is a different question from the
@@ -115,6 +116,39 @@ export function rollGoal(goal: GoalValue, now: number): GoalValue {
     return { ...rolled, goalMet: true, streak: rolled.streak + 1 };
   }
   return rolled;
+}
+
+/** A period whose logged time has reached its target is met, once, and the
+ *  streak goes up with it — the reducer's `settleGoalMet`. */
+function settleGoal(goal: GoalValue): GoalValue {
+  if (goal.goalMet || goal.loggedMs < goal.minutes * MS_PER_MINUTE) return goal;
+  return { ...goal, goalMet: true, streak: goal.streak + 1 };
+}
+
+// ── The running task ────────────────────────────────────────────────────────
+
+/**
+ * The running task's work on the days from `from` to `to`, inclusive.
+ *
+ * Added on top of the account's rows, which only take a task's work when it
+ * ENDS (task-work.ts). A day whose row already lists the task has been credited
+ * with its part, which is the moment between a device ending the task and this
+ * vault learning it is no longer running, so that day adds nothing.
+ */
+function runningMsIn(
+  running: RunningWork | null | undefined,
+  snapshots: GoalSnapshots,
+  from: string,
+  to: string,
+): number {
+  if (!running) return 0;
+  let ms = 0;
+  for (const share of running.shares) {
+    if (share.date < from || share.date > to) continue;
+    if (snapshots[share.date]?.tasks?.some((task) => task.id === running.taskId)) continue;
+    ms += share.ms;
+  }
+  return ms;
 }
 
 // ── What the card says ──────────────────────────────────────────────────────
@@ -370,30 +404,47 @@ export function pruneSnapshots(snapshots: GoalSnapshots): GoalSnapshots {
  * The live row is rolled first, exactly as Home and Settings roll it before they
  * render, so a vault left open past midnight does not print yesterday's total
  * under today's date.
+ *
+ * The RUNNING task's work is counted in, split at midnight, as `liveTaskGoal`
+ * counts it on Home: each day takes the part worked on it, and a day's period
+ * the parts worked from the period's start to that day. That is the figure the
+ * account will hold once the task ends, so a task started yesterday morning
+ * shows on yesterday's card and on today's, each with its own part. A day it
+ * takes over the target is met, and its streak goes up with it.
  */
 export function goalForDay(params: {
   live: GoalValue | null;
   snapshots: GoalSnapshots;
   date: string;
   now: number;
+  running?: RunningWork | null;
 }): GoalValue | null {
-  const { live, snapshots, date, now } = params;
-  if (date === dayKey(now)) return live ? rollGoal(live, now) : null;
+  const { live, snapshots, date, now, running } = params;
+  if (date === dayKey(now)) {
+    if (!live) return null;
+    const rolled = rollGoal(live, now);
+    const worked = runningMsIn(running, snapshots, dayKey(rolled.periodStart), date);
+    return settleGoal({ ...rolled, loggedMs: rolled.loggedMs + worked });
+  }
   const banked = snapshots[date]?.goal;
   if (!banked) return null;
-  return {
+  // The period the day belonged to, which the card never prints and `goalText`
+  // never reads. Recomputed rather than stored: a banked day is never rolled,
+  // so nothing downstream can be misled by it.
+  const periodStart = goalPeriodStart(banked.period, dayKeyStart(date) ?? now);
+  const worked = runningMsIn(running, snapshots, dayKey(periodStart), date);
+  const met = banked.periodLoggedMs >= banked.minutes * MS_PER_MINUTE;
+  return settleGoal({
     period: banked.period,
     minutes: banked.minutes,
-    loggedMs: banked.periodLoggedMs,
-    // The period the day belonged to, which the card never prints and
-    // `goalText` never reads. Recomputed rather than stored: a banked day is
-    // never rolled, so nothing downstream can be misled by it.
-    periodStart: goalPeriodStart(banked.period, dayKeyStart(date) ?? now),
+    loggedMs: banked.periodLoggedMs + worked,
+    periodStart,
     streak: banked.streak,
-    // Not recorded, and not needed: `goalMet` drives the reducer's streak
-    // arithmetic and nothing the card draws.
-    goalMet: false,
-  };
+    // Not recorded as such: a day whose own figure reached its target was met,
+    // and its streak already counts it. Read here only so the running task's
+    // part can settle a day it takes over the target, once.
+    goalMet: met,
+  });
 }
 
 /**
@@ -413,16 +464,20 @@ export function goalForDay(params: {
  * as broken every morning until the first task completed. `signedIn` is what
  * makes that safe: signed out, nothing is being watched and there is no answer
  * to give.
+ *
+ * The running task's part of the day is counted in, as on the `{taskgoal}`
+ * card (goalForDay), so the two never disagree about one day.
  */
 export function taskTimeForDay(params: {
   snapshots: GoalSnapshots;
   date: string;
   now: number;
   signedIn: boolean;
+  running?: RunningWork | null;
 }): number | null {
-  const recorded = params.snapshots[params.date];
-  if (recorded) return recorded.loggedMs;
-  return dayIsRecorded(params) ? 0 : null;
+  if (!dayIsRecorded(params)) return null;
+  const recorded = params.snapshots[params.date]?.loggedMs ?? 0;
+  return recorded + runningMsIn(params.running, params.snapshots, params.date, params.date);
 }
 
 /**
@@ -487,8 +542,8 @@ export function timesBlockedForDay(params: {
  *
  * The figure is what has been BANKED. A drain span still running is credited
  * when it closes, so a note read while a browser is burning Free Time in the
- * background is behind by that open span — the same way a RUNNING task is
- * missing from `{tasktime}` until it completes.
+ * background is behind by that open span. A running TASK is not missing that
+ * way from `{tasktime}`: its record says where it has worked (task-work.ts).
  */
 export function freeTimeForDay(params: {
   snapshots: GoalSnapshots;
@@ -859,6 +914,7 @@ export function daySummaryForDay(params: {
   now: number;
   signedIn: boolean;
   visible: DaySummaryVisibility;
+  running?: RunningWork | null;
 }): DaySummary | null {
   const loggedMs = taskTimeForDay(params);
   const freeTimeMs = freeTimeForDay(params);

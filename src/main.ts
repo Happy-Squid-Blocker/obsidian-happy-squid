@@ -13,6 +13,7 @@ import { composeNoteContext } from "./note-context";
 import { tickCompleted, writeRewrite } from "./tick";
 import { WELCOME_PATH, welcomeNote } from "./welcome";
 import { tickWatch } from "./tick-watch";
+import { runningWork } from "./task-work";
 import {
   absorbGoalDays,
   dayIsRecorded,
@@ -343,7 +344,10 @@ export default class HappySquidPlugin extends Plugin {
     if (found.marker === null) return null;
     const now = Date.now();
     const date = markerDate(found.marker, now);
-    const day = { snapshots: this.data.goals, date, now, signedIn: this.states.signedIn };
+    // The running task's work so far, by day: the account credits it only when
+    // the task ends, so the cards add it on top until then (task-work.ts).
+    const running = runningWork(this.states.work, now);
+    const day = { snapshots: this.data.goals, date, now, signedIn: this.states.signedIn, running };
     switch (found.name) {
       case "tasktime": {
         const loggedMs = taskTimeForDay(day);
@@ -370,7 +374,7 @@ export default class HappySquidPlugin extends Plugin {
         return summary === null ? null : { kind: "daysummary", day: summary, date };
       }
       case "taskgoal": {
-        const goal = goalForDay({ live: this.states.goal, snapshots: this.data.goals, date, now });
+        const goal = goalForDay({ live: this.states.goal, snapshots: this.data.goals, date, now, running });
         // A day this vault can answer for ALWAYS draws its card, and one whose
         // goal was off says so on it (Anton, 2026-09-01) rather than falling
         // back to raw text — the same rule the four figures keep by printing a
@@ -483,6 +487,8 @@ export default class HappySquidPlugin extends Plugin {
     // `Plugin.onunload` is synchronous; closing the socket is fire-and-forget,
     // and a close that fails is logged by `stop` itself.
     void this.live.stop();
+    // Before the next instance's client starts refreshing the same session.
+    this.auth.dispose();
   }
 
   /** The idle beat the stamp rides. Restarted on every keystroke, so it lands

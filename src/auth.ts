@@ -29,6 +29,8 @@ export class Auth {
   readonly client: ReturnType<typeof createClient>;
   private cache: Store = {};
   private ready: Promise<void>;
+  /** Set when the plugin unloads. See `dispose`. */
+  private disposed = false;
 
   constructor(private store: SessionStore) {
     this.ready = store.load().then((s) => {
@@ -47,11 +49,13 @@ export class Auth {
           },
           setItem: async (key: string, value: string) => {
             await this.ready;
+            if (this.disposed) return;
             this.cache[key] = value;
             await this.store.save(this.cache);
           },
           removeItem: async (key: string) => {
             await this.ready;
+            if (this.disposed) return;
             delete this.cache[key];
             await this.store.save(this.cache);
           },
@@ -87,5 +91,23 @@ export class Auth {
 
   async signOut(): Promise<void> {
     await this.client.auth.signOut();
+  }
+
+  /**
+   * Stops this client for good, when the plugin unloads.
+   *
+   * Turning the plugin off and on, or installing a new build, loads a NEW
+   * instance into the same window, and the old client's refresh timer used to
+   * go on running beside the new one. Both held one refresh token, which the
+   * server replaces at every refresh, so the first time they fell out of step
+   * (a refresh lost to a network change) the late one presented a used token,
+   * was refused, and wrote its own empty session and stale day rows over
+   * `data.json`: the plugin signed itself out (Anton's vault, 2026-11-24).
+   * Writes are refused from here on too, because a refresh already in flight
+   * still finishes after `dispose`.
+   */
+  dispose(): void {
+    this.disposed = true;
+    void this.client.auth.dispose();
   }
 }
